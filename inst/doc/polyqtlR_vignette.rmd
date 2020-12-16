@@ -1,0 +1,780 @@
+---
+title: "Performing polyploid QTL analysis using polyqtlR"
+author: "Peter M. Bourke"
+date: "`r Sys.Date()`"
+vignette: >
+  %\VignetteIndexEntry{How to use polyqtlR}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+bibliography: bibliography.bib
+csl: biomed-central.csl
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<a name="sect1"></a>
+
+## Introduction
+It is nowadays increasingly feasible to conduct genetic analyses in polyploid populations thanks to developments in genotyping technologies as well as tools designed to deal with these genotypes. `polyqtlR` is one such tool that provides a number of functions to perform quantitative trait locus (QTL) mapping in F1 populations of outcrossing, heterozygous polyploid species.
+
+`polyqtlR` assumes that a number of prior steps have already been performed - in particular, that an integrated linkage map for the mapping population has been generated. The package has been developed to utilise the output of the mapping software `polymapR`, although any alternative mapping software that produces phased and integrated linkage maps could also be used. However, the input files may have to be altered in such cases. Currently, bi-allelic SNP markers are the expected raw genotypic data, which is also the data format used by `polymapR` in map construction. However, some functions can also accept probabilistic genotypic data, for example in the estimation of IBD probabilities. Full functionality of probabilistic genotypes in the package has yet to be implemented but is planned for future releases. The assignment of marker dosages in polyploid species can be achieved using a number of R packages such as `fitPoly` [@Voorrips2011]. More background on the steps of dosage-calling and polyploid linkage mapping can be found in a review of the topic by Bourke *et al.* (2018) [@Bourke2018a].
+
+The QTL analysis functions primarily rely on identity-by-descent (IBD) probabilities, which are the probabilities of inheritance of particular combinations of parental haplotypes. Single-marker QTL detection methods are also available. The package was originally developed with the IBD output of TetraOrigin [@Zheng2016] in mind. However, the TetraOrigin package is currently only applicable to tetraploid datasets, and has been implemented in the proprietary software *Mathematica*. Therefore, alternative options to estimate IBD probabilities within R for multiple ploidy levels are offered in `polyqtlR`.
+
+Genotyping errors are a regular feature of modern marker datasets. Although linkage mapping software such as `polymapR` has been shown to be relatively robust against genotyping errors [@Bourke2018b], if present in sufficiently large proportions (~10 % errors or more) issues may arise with map accuracy and QTL detection. Therefore, a number of functions have been included in `polyqtlR` to check map accuracy using the estimated IBD probabilities, and to re-impute marker genotypes if required. These imputed genotypes may then be used in an iterative process to re-estimate the linkage map and re-run a QTL analysis.
+
+This tutorial goes through each of the steps in a typical QTL analysis using the example datasets provided with the package, outlining the different options that are available. However, it is certainly recommended to consult the documentation that accompanies each of the functions by running the `?` command before the function name (*e.g.* `?QTLscan`).
+
+<a name="sect2"></a>
+
+## Installing `polyqtlR`
+`polyqtlR` can be installed using the following call from within R:
+
+```{r eval = FALSE}
+install.packages("polyqtlR")
+```
+
+There are a number of package dependencies which should be installed, *e.g.* `Rcpp`, `foreach`, or `doParallel`. Usually these will be automatically installed as well but if not, you can always install them yourself one by one, *e.g.*
+
+```{r, eval = FALSE}
+install.packages("Rcpp")
+install.packages("foreach")
+install.packages("doParallel")
+```
+
+before re-trying the installation of `polyqtlR`. Eventually when all dependencies are on your computer, you should be able to successfully run the following command (*i.e.* without any error message):
+
+```{r}
+library(polyqtlR)
+```
+
+It is also a good time to load the datasets that you will need to perform a typical analysis, namely a phased maplist, a set of SNP marker genotypes (discrete dosage scores) and a set of trait data (phenotypes):
+```{r}
+data("phased_maplist.4x", "SNP_dosages.4x", "Phenotypes_4x")
+```
+
+In the example that follows we are using a simulated tetraploid dataset with 2 chromosomes for simplicity.
+
+<a name="sect3"></a>
+
+## IBD probabilities 
+
+Currently two options to estimate IBD probabilities in an F1 population exist within `polyqtlR`. The first uses a heuristic approach originally developed for tetraploids but later applied to hexaploid populations [@Bourke2014; @vanGeest2017] and implemented here in the `polyqtlR::estimate_IBD` function. This can be very computationally efficient at higher ploidy levels (and has been generalised to *all* ploidy levels), but the algorithm ignores partially-informative marker information. In datasets with large numbers of haplotype-specific markers this is not such an issue, but in datasets with fewer such markers the accuracy of the resulting IBD probabilities is compromised. 
+The method behind TetraOrigin [@Zheng2016] for offspring IBD probability estimation given a known parental marker phasing has also been replicated in the `polyqtlR::estimate_IBD` function (this is the default method used). Note that unlike the original TetraOrigin software, parental marker phasing is not re-estimated. However, this is usually a direct output of the linkage mapping procedure (*e.g.* using `polymapR`). 
+
+### Data structures
+As the IBD data are the most central objects in this package it is worth spending a moment describing them. In `polyqtlR`, IBD probabilities are organised in nested list form. The first level of structure are the linkage groups. In our example dataset, the list should have 5 elements corresponding to the 5 linkage groups, each of which is itself a list containing the following elements:
+
+* **IBDtype** The type of IBD probability, either "genotypeIBD" or "haplotypeIBD" 
+
+* **IBDarray** A 3d array of IBD probabilities, with dimensions "locus","genotype class", "individual"
+
+* **map** The integrated linkage map (marker names and cM positions, in order)
+
+* **parental_phase** The phasing of the markers in the parental map
+
+* **biv_dec** Whether bivalents only (`TRUE`) or also multivalents were allowed (`FALSE`) in the procedure 
+
+* **gap** Here `NULL`, but later this can hold a numeric value (e.g. 1 cM) if IBDs are 'splined' or interpolated.
+ 
+* **genocodes** Ordered list of genotype codes used to represent the different genotype classes
+
+* **pairing** Log likelihoods of each of the different pairing scenarios considered
+
+* **ploidy** The ploidy of parent 1
+
+* **ploidy2** The ploidy of parent 2
+
+* **method** The method used, either "hmm" (Hidden Markov Model), "heur" (heuristic) or "hmm_TO" (Hidden Markov Model TetraOrigin)
+
+* **error** The offspring error prior (eps) used in the calculation.
+
+All functions within `polyqtlR` for estimating or importing IBD probabilities will automatically return them in this form.
+
+<a name="hmm"></a>
+
+### HMM for IBD estimation
+The `estimate_IBD` function of `polyqtlR` with the default setting `method = "hmm"` estimates offspring IBD probabilities using a Hidden Markov Model (HMM) proposed by Zheng et al [@Zheng2016] but generalised here to multiple ploidy levels. Currently, diploid (2x), triploid (3x = 4x $\times$ 2x), tetraploid (4x) and hexaploid (6x) populations are handled. `genotypes` can either be discrete (*i.e.* integer marker dosage scores), or probabilistic (*i.e.* the probabilities of each of the ploidy + 1 possible scores). For tetraploids and hexaploids, the possibility of incorporating double reduction [@Bourke2015] (*i.e.* allowing for the phenomenon of multivalent pairing) is available, although this can have serious performance implications for hexaploids (and in hexaploids, the option of allowing multivalent pairing in *both* parents for the same chromosome has been disabled as it led to unacceptable RAM requirements (> 16 Gb)). Some of the code used to estimate these IBD probabilities has been programmed in C++ to improve performance, and relies on both the `Rcpp` and `RcppArmadillo` packages to provide the interface between R, C++ and the Armadillo C++ library.
+
+We run the function, in this case allowing for multivalents (`bivalent_decoding = FALSE`), as follows:
+
+```{r eval = FALSE}
+IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
+                       genotypes = SNP_dosages.4x,
+                       ploidy = 4,
+                       bivalent_decoding = FALSE,
+                       ncores = 4)
+```
+
+For convenience the default setting of `bivalent_decoding` is `TRUE`, as the function evaluates faster if only bivalents are considered (the difference in run-time becomes more pronounced for hexaploids). We also cannot estimate the [genotypic information coefficient](#sect5) if `bivalent_decoding = FALSE`.
+
+Here we chose to enable parallel processing to speed up the calculations (jobs are split across linkage groups, so with 5 linkage groups it would have made more sense to use 5 cores if they were available). Use `parallel::detectCores()` to display how many CPU cores are available, and use 1 or 2 less than this at the very most. In this dataset there are only 2 linkage groups, so no more than 2 cores will be used.
+
+```{r eval = FALSE}
+nc <- parallel::detectCores() - 1
+```
+
+```{r echo = FALSE}
+nc <- 2 #to pass CRAN checks
+```
+
+### "Heuristic" method for IBD estimation
+In cases where the results are needed quickly, or where there are very large numbers of markers, or for ploidy levels above 6, it is convenient to use the heuristic approach to IBD estimation. We do this using the `estimate_IBD` function as follows:
+
+```{r eval=FALSE}
+IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
+                       genotypes = SNP_dosages.4x,
+                       method = "heur",
+                       ploidy = 4)
+```
+
+Note that the attribute `IBDtype` is now `haplotypeIBD`, referring to the fact that these IBDs are the probabilities of inheriting each parental haplotype at a locus, as opposed to the probabilities of inheriting particular combinations of parental alleles at a locus (`genotypeIBD`). Although similar, certain downstream functions such as `exploreQTL` can only work with the former (although you will still be able to visualise QTL allele effects with the `visualiseQTL` function). The accuracy of these IBDs is generally *lower* than if `method = "hmm"` had been used (and therefore the power of subsequent QTL analyses will be somewhat reduced). 
+
+### Importing IBDs from TetraOrigin
+TetraOrigin produces by default a large .txt output file after running the function "inferTetraOrigin". However, it is convenient to produce a summary of this output using the "saveAsSummaryITO" function, which produces a .csv file summarising the results. Information on how to use TetraOrigin is provided with the package itself, downloadable from [GitHub](https://github.com/chaozhi/TetraOrigin). In particular, the software offers users the option of estimating IBDs under the assumption of bivalent pairing or also allowing for multivalents during meiosis. In general, allowing for multivalents offers a more complete description of autopolyploid meiosis, but it does not make a large difference to the final QTL results which model is used [@Bourke2019]. A good option is to run the analysis using both approaches - if this is done, make sure that the same estimated parental phasing is used, otherwise the numbering of parental haplotypes will likely be inconsistent. 
+
+The function `import_IBD` imports the .csv output of TetraOrigin::saveAsSummaryITO. It takes a number of arguments, such as `folder`, which is the folder containing the output of TetraOrigin. For example, if we wanted to import IBDs from the folder "TetraOrigin" for a species with 5 linkage groups, we would run the following:
+
+```{r, eval = FALSE}
+IBD_4x <- import_IBD(folder = "TetraOrigin",
+                     filename.vec = paste0("TetraOrigin_Output_bivs_LinkageGroup",1:5,"_Summary"),
+                     bivalent_decoding = TRUE)
+```
+
+Here it is assumed that the TetraOrigin summary filenames are "TetraOrigin_Output_bivs_LinkageGroup1_Summary.csv" *etc.* If all goes well, the following messages will be printed per linkage group:
+```{r eval = FALSE}
+Importing map data under description inferTetraOrigin-Summary,Genetic map of biallelic markers
+Importing parental phasing under description inferTetraOrigin-Summary,MAP of parental haplotypes
+Importing IBD data under description inferTetraOrigin-Summary,Conditonal genotype probability
+```
+
+
+#### High marker densities
+Particularly at higher ploidy levels (6x), it becomes computationally expensive to estimate IBDs using the `hmm` method. Our experience has shown that for hexaploids with a mapping population size of 400 or more individuals running on 4 cores, about 200 - 300 markers per chromosome can be accommodated on an "above-average" desktop computer (16 GB RAM). Running on a single core will reduce the committed memory, but the evaluation time will therefore be much longer. 250 markers per chromosome should be already enough to estimate IBDs with high accuracy - including extra markers over this amount will add incrementally less information (following the law of diminishing returns).
+
+The function `thinmap` can be used to make a selection of markers that tries to maximise their distribution across the genome and across parental homologues. The argument `bin_size` is used to specify the size of the bins in which markers are selected - increasing this results in fewer markers being used. The ideal `bin_size` is 1 cM, although at higher ploidies and with higher marker densities, wider bins may be needed. The function is called as follows:
+
+```{r}
+thinned_maplist.4x <- thinmap(maplist = phased_maplist.4x,
+                              dosage_matrix = SNP_dosages.4x)
+```
+
+The object `thinned_maplist.4x` can then be used in place of `phased_maplist.4x` in a call to `estimate_IBD`.
+
+### Interpolating IBDs 
+
+Regardless of how they were generated, IBD probabilities are estimated at all marker positions provided. When we perform an initial scan for QTL, it is often more efficient to look for QTL at a grid of evenly-spaced positions (such as at every 1 cM). This is because the genotype data has been replaced with multi-point IBD estimates at the marker positions. Information at *e.g.* ten different markers within a 0.5 cM window is virtually identical and therefore just one representative for this locus should approximate the full information, while reducing the number of statistical tests. This becomes particularly relevant when we generate significance thresholds using permutation tests later, which are computationally quite demanding.
+
+It is therefore recommended to interpolate the probabilities using the `spline_IBD` function as follows:
+
+```{r eval = FALSE}
+IBD_4x.spl <- spline_IBD(IBD_list = IBD_4x, 
+                         gap = 1) #grid at 1 cM spacing
+```
+
+<a name="sect4"></a>
+
+## Visualising IBD haplotypes
+Before performing a QTL analysis, it is a good idea to visualise the IBD probabilities as these can give indications about the quality of the genotypes, the linkage maps and the parental marker phasing. The function `visualiseHaplo` was developed originally to examine the inherited haplotypes of offspring with extreme (usually favourable) trait scores to see whether their inherited alleles are consistent with a predicted QTL model (we return to this later). But as a first look at the data quality, the function is also useful. 
+
+Haplotypes of linkage group 1 of the first nine F1 offspring can be visualised as follows:
+
+```{r echo = FALSE}
+IBD_4x <- readRDS(file = "IBD_4x_DR.RDS")
+```
+
+
+```{r, fig.width = 8, fig.height = 7}
+visualiseHaplo(IBD_list = IBD_4x,
+               display_by = "name",
+               linkage_group = 1,
+               select_offspring = colnames(SNP_dosages.4x)[3:11], #cols 1+2 are parents
+               multiplot = c(3,3)) #plot layout in 3x3 grid
+```
+
+Here the quality of the predicted haplotypes appears to be high - dark colours signifying high confidence (probabilities close to 1) and small numbers of recombinations predicted. Regions of dark red signify double reduction, which were permitted during the estimation of IBDs using `estimate_IBD`. In poorer-quality datasets, considerably more "noise" may be present, with less certainty about the correct configuration per offspring. 
+
+The function returns a list of 2 elements (`recombinants` and `allele_fish`) which do not concern us here but which we will return to [later](#fish). Note that we selected the offspring to display using the `select_offspring` argument - using the option `select_offspring = all` will return the whole population. We have also opted to `display_by = "name"`, as opposed to `display_by = "phenotype"`, in which case further arguments are required. For convenience the plots were combined into a 3 x 3 grid using the `multiplot` argument. For more options, including how to overlay recombination events, see `?visualiseHaplo`.
+
+An example of IBD probabilities that show much higher levels of uncertainty might look something like the following:
+
+<a name="hp"></a>
+
+```{r, echo = FALSE}
+IBDnoisy <- readRDS("noisyIBD.RDS")
+```
+
+```{r, fig.width = 8, fig.height = 7, echo = FALSE}
+visualiseHaplo(IBDnoisy, 
+               display_by = "name", 
+               select_offspring = "all",
+               multiplot = c(3,3))
+```
+
+Here, there are unrealistically-high numbers of recombinations predicted, suggesting that the algorithm had difficulty correctly assigning genotype classes. In such cases it may be worthwhile to re-examine the steps prior to IBD estimation, in particular genotype calling. We will return to this issue again [later](#error).
+
+<a name="sect5"></a>
+
+## Genotypic Information
+Another approach to assessing the quality of the IBD probabilities, as well as understanding the "QTL detection landscape" to some degree is to estimate the **G**enotypic **I**nformation **C**oefficient (GIC). The GIC is calculated per homologue across the whole population, and ranges from 0 (no information) to 1 (full information). To maximise QTL detection power and precision, we would like the GIC to be uniform and as high as possible [@Bourke2019]. Note that the GIC is only defined if we set the `bivalent_decoding` option to be `TRUE` in the estimation of IBD probabilities. We calculate the GIC as follows:
+
+```{r echo = FALSE}
+data("IBD_4x")
+```
+
+
+```{r}
+GIC_4x <- estimate_GIC(IBD_list = IBD_4x)
+```
+
+We can also visualise the output of this function as follows:
+
+```{r}
+visualiseGIC(GIC_list = GIC_4x)
+```
+
+At the telomeres there is usually a tapering off of information, a result of having shared marker information from one side only in these regions. It is often possible to discern the relationship between marker coverage and GIC directly from this visualisation, although it should be noted that non-simplex marker alleles provide incomplete information about inheritance. So for example in an autotetraploid, a marker in duplex condition in parent 1, phased to homologues 1 and 3, does not provide much information about the inheritance of homologues 1 and 3. This is because on average, $\frac{2}{3}$ of the population will inherit only one copy of the marker allele, which may have come from either homologue 1 or homologue 3. Without neighbouring marker information to support a decision, we remain unsure, as both possibilities are equally likely.
+
+<a name="sect6"></a>
+
+## Performing a QTL scan
+In order to perform a QTL scan, we also need phenotypes. There is already an example set of phenotypes included with the package which we previously loaded with the call `data(Phenotypes_4x)`. We first look at the required structure of this (data-frame):
+
+```{r}
+dim(Phenotypes_4x)
+
+head(Phenotypes_4x)
+```
+
+Here we see that there are 3 columns in this data-frame, namely "year", "geno" and "pheno". There can be as many extra columns as you like for different traits, but at a minumum there must always be two columns, one corresponding to the genotype identifiers (the names of the F1 individuals in the mapping population) and one corresponding to trait scores of some kind (numeric). If a trait was qualitatively scored, for example as "resistant" or "susceptible", then you first need to re-code this as (*e.g.*) 1 and 0. 
+
+### Including experimental blocks
+Note also that there is a separate column for "year" in this dataset. In general, only 1 level of experimental blocking is allowed. If there were replicated observations within blocks, then a more complicated nested block analysis would be needed. In such instances, it would probably be best to first derive best linear unbiased estimates (BLUEs) for the trait, with the full nested block structure provided. See the section on [BLUEs](#blue) below for more details. However, the QTL functions provided within `polyqtlR` are unable to inherit variance components from such an approach, and can only deal with the means in this case.
+
+### Running an initial QTL scan
+Assuming we have a simple blocking structure as is the case here (single measurements per genotype repeated over 3 years) we can proceed with a preliminary QTL scan as follows:
+
+```{r eval = FALSE}
+qtl_LODs.4x <- QTLscan(IBD_list = IBD_4x,
+                       Phenotype.df = Phenotypes_4x,
+                       genotype.ID = "geno",
+                       trait.ID = "pheno",
+                       block = "year")
+```
+
+```{r echo = FALSE}
+qtl_LODs.4x <- readRDS("qtl_LODs.4x.RDS")
+```
+
+
+The function gives a summary table of the trait over the different blocks, which can be useful for identifying possibly outlying observations. Because the function calls on the `lm` function from base R, missing values are not allowed in the trait scores. `QTLscan` performs some imputation if blocks are present, by estimating block effects and using them and the observed values to predict a missing phenotype. If this behaviour is not desired, then manually removing these datapoints beforehand is necessary. `QTLscan` can only work if the genotype identifiers (the offspring names) match completely between the trait data and the IBD data. If this is not the case, an error will result. The function reports the number of offspring with matching genotype and phenotype identifiers, so the user can record the population size that was used in the analysis.
+
+### Visualising QTL results
+The object returned by `QTLscan` is a list with a number of items, including:
+
+* **QTL.res** A matrix of QTL results
+
+* **Perm.res** The results of a permutation test, if run (see below). In our example here, this field is `NULL`, *i.e* empty.
+
+* **Residuals** Vector of residual phenotypes after blocks or co-factors have been fitted.
+
+* **Map** The linkage map upon which the IBD probabilities were based.
+
+More details on the output can be found by running `?QTLscan`. There are a number of functions in the package for visualising the results. The simplest is to produce a plot per linkage group, which can be achieved using the `plotQTL` function. An example call would be as follows:
+
+```{r}
+plotQTL(LOD_data = qtl_LODs.4x,
+        multiplot = c(1,2), #1 row, 2 columns
+        col = "darkgreen")
+```
+
+As before, details of the options available for this function can be accessed using `?plotQTL`.
+
+An alternative is to plot the results of the whole-genome scan on a single track, for which we use the `plotLinearQTL` function as follows:
+
+```{r}
+plotLinearQTL(LOD_data = qtl_LODs.4x,
+              col = "dodgerblue")
+```
+
+A variant of this function is the `plotLinearQTL_list` function, which is specifically designed to visualise the results of a number of analysis together. This can also be done using either of the two functions already mentioned, but in the case of the _list version, the superimposed plots are re-scaled so that threshold lines overlap. This is covered in more detail in the section on [co-factors](#overlaycofactorplot).
+
+### Significance thresholds
+Although it already appears like we have an interesting peak on LG1, we are not sure whether this region is truly associated with our trait or not. One method of establishing whether the association is significant is to run a permutation test. Currently the package has two options. The first uses the full structure of your data as provided. However, it is much faster to run a permutation test when your data has a simple structure, with no experimental blocks or no genetic co-factors. To deal with experimental blocks, you should estimate [BLUEs](#blue) first before running the permutation test. For genetic co-factors, you can first run an analysis with the co-factor(s) included, and then use the residuals as your phenotype. However, it is also possible (but not recommended) to simply run a permutation test without these steps, using the `QTLscan` function as follows:
+
+```{r eval = FALSE}
+qtl_LODs.4x <- QTLscan(IBD_list = IBD_4x,
+                       Phenotype.df = Phenotypes_4x,
+                       genotype.ID = "geno",
+                       trait.ID = "pheno",
+                       block = "year",
+                       perm_test = TRUE,
+                       ncores = nc)
+```
+
+```{r echo = FALSE}
+qtl_LODs.4x <- readRDS("qtl_LODs.4x_perm.RDS")
+```
+
+If we now plot the results, the threshold line is automatically included:
+
+```{r}
+plotLinearQTL(LOD_data = qtl_LODs.4x,
+              col = "dodgerblue")
+```
+
+However, if you ran this step you will have noticed that it is quite slow. Therefore, it is recommended to first estimate a mean phenotypic value per individual before running the permutation test, which we do here using best linear unbiased estimates in the `nlme` package which fits a linear mixed model with genotype as fixed effect.
+
+<a name="blue"></a>
+
+### BLUEs
+We can estimate the best linear unbiased estimates using the `BLUE` function as follows:
+
+```{r}
+blues <- BLUE(data = Phenotypes_4x,
+              model = pheno~geno,
+              random = ~1|year,
+              genotype.ID = "geno")
+```
+
+The resulting object is a data-frame with columns "geno" and "blue", which we need in our revised call to `QTLscan`:
+
+```{r eval = FALSE}
+qtl_LODs.4x <- QTLscan(IBD_list = IBD_4x,
+                       Phenotype.df = blues,
+                       genotype.ID = "geno",
+                       trait.ID = "blue",
+                       perm_test = TRUE,
+                       ncores = nc)
+```
+
+```{r echo = FALSE}
+qtl_LODs.4x <- readRDS("qtl_LODs.4x_fastpermute.RDS")
+```
+
+
+If we now plot the results, the threshold line is automatically included:
+
+```{r}
+plotLinearQTL(LOD_data = qtl_LODs.4x,
+              col = "dodgerblue")
+```
+
+Note that the LOD scores have now increased, but the significance threshold has also increased. This has to do with how the LOD score is estimated, using a ratio of the RSS from your fitted model at a putative QTL position with that of the NULL model with no QTL. In the case of blocks, the NULL model already contains your blocking term, and so a portion of the phenotypic variance is already accounted for when calculating the LOD score. When using BLUEs as your phenotype, you first correct your phenotypes for block effects, but the NULL model now has no explanatory variables, which artificially inflates your LODs. However, a permutation test will accounts for these sorts of discrepancies, and the region of the genome that lies above the threshold should be the same. 
+
+### Adding genetic co-factors
+In many situations we may wish to include already-identified QTL positions as fixed genetic effects in a QTL search. This can help to reduce the amount of unwanted background variance in the phenotypic data which can lead to greater power to detect QTL at other positions. Another possible reason could be to test whether multiple peaks on a single linkage group are independent. We can run a co-factor analysis using `QTLscan`  by specifying the `cofactor_df` argument. To this we supply a data-frame with three columns, namely "LG", "type", and "ID" (although column identifiers are not mandatory). 
+
+Before we add the QTL peak as a co-factor, we need to know where it is. We know it is on LG1, and has a LOD value above 12 (here, using the BLUEs results). We search for the peak as follows:
+
+```{r}
+qtl_LODs.4x$QTL.res[qtl_LODs.4x$QTL.res$chromosome == 1 & qtl_LODs.4x$QTL.res$LOD > 12,]
+```
+
+The peak position is therefore at 12.3 cM. We include this as a co-factor as follows:
+```{r eval = FALSE}
+qtl_LODs.4x_cofactor <- QTLscan(IBD_list = IBD_4x,
+                                Phenotype.df = Phenotypes_4x,
+                                genotype.ID = "geno",
+                                trait.ID = "pheno",
+                                block = "year",
+                                cofactor_df = data.frame("LG" = 1,
+                                                         "type" = "position",
+                                                         "ID" = 12.3),
+                                perm_test = FALSE,
+                                ncores = nc)#nc is the number of cores, defined earlier
+```
+
+Note that we have not performed a permutation test here. This is possible, but again the running time is somewhat longer than one would like. Therefore, we can use the residuals of the fitted NULL model (including blocks and the co-factor) as a new set of phenotypes as a way to again access the optimised permutation test of `QTLscan`:
+
+```{r echo = FALSE}
+qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cofactor.RDS")
+```
+
+```{r}
+new_pheno <- qtl_LODs.4x_cofactor$Residuals
+colnames(new_pheno)
+```
+
+Note the colnames of the `new_pheno`, we will need these. We now estimate BLUEs using these as our phenotypes (to account for block effects) and re-run the analysis as follows:
+
+```{r}
+blues <- BLUE(data = new_pheno,
+              model = Pheno~geno,
+              random = ~1|Block,
+              genotype.ID = "geno")
+```
+
+```{r eval = FALSE}
+qtl_LODs.4x_cofactor <- QTLscan(IBD_list = IBD_4x,
+                                Phenotype.df = blues,
+                                genotype.ID = "geno",
+                                trait.ID = "blue",
+                                perm_test = TRUE,
+                                ncores = nc)
+```
+
+```{r echo = FALSE}
+qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cof_fastpermute.RDS")
+```
+
+
+```{r}
+plotLinearQTL(LOD_data = qtl_LODs.4x_cofactor,
+              col = "red")
+```
+
+
+Note that if we wanted to include multiple co-factors, we could do this by supplying a data-frame with multiple rows in `cofactor_df`. As before, check out `?QTLscan` for full details. 
+
+<a name="overlaycofactorplot"></a>
+
+### Comparing multiple analyses
+It is often convenient to plot the results of different analyses together. For example comparing the results of a single marker analysis with an IBD-based approach, or plotting an initial QTL scan versus the results when a set of genetic co-factors were also included. Both the `plotQTL` and `plotLinearQTL` functions have an argument `overlay`, which, if set to `TRUE`, overlays plots on the previous plotting window, allowing multiple layers to be built on top of each other.
+
+However, in cases where significance thresholds were determined in separate analyses, using the simple `overlay` command will soon lead to cluttered-looking plots with multiple significance thresholds on top of each other. One possibility is to disable the visualisation of significance thresholds when rendering each plot. However, it is often of interest to compare the results in terms of the presence (or absence) of significant QTL peaks. For this reason the function `plotLinearQTL_list` was added to the package. This function re-scales overlaid plots so that the significance thresholds for each set of results overlaps perfectly. As the name suggests, it takes as its input a *list* of separate QTL results, each of which is the output of a separate call to the function `QTLscan`. The function will not run if this list is of length 1 (so the results of a single analysis), or if any of the analyses were run without `perm_test = TRUE`. In these cases, use of the simpler functions mentioned is appropriate.
+
+We can compare the results obtained earlier from the original and co-factor analyses as follows:
+
+```{r}
+plotLinearQTL_list(LOD_data.ls = list(qtl_LODs.4x,
+                                      qtl_LODs.4x_cofactor),
+                   plot_type = "lines")
+```
+
+<a name="sect7"></a>
+
+## Exploring the QTL peak
+Once we have detected a QTL, we may also wish to determine what the most likely QTL segregation type is. In other words, we would like to know the source of favourable QTL alleles, or find out which particular alleles lead to an improvement  (or reduction) in a trait of interest. However, in order to be able to do this using the `exploreQTL` function, we again need to have calculated the [best linear unbiased estimates](#blue), but without co-factors (where the variation associated with our discovered QTL has essentially been removed from the data!). Therefore, first go back and re-estimate the BLUEs using the original phenotypes:
+
+```{r}
+blues <- BLUE(data = Phenotypes_4x,
+              model = pheno~geno,
+              random = ~1|year,
+              genotype.ID = "geno")
+```
+
+We then use these adjusted means in our call to the `exploreQTL` function as follows:
+
+```{r}
+qtl_explored <- exploreQTL(IBD_list = IBD_4x,
+                           Phenotype.df = blues,
+                           genotype.ID = "geno",
+                           trait.ID = "blue",
+                           linkage_group = 1,
+                           LOD_data = qtl_LODs.4x)
+```
+
+Note that we need only specify the `linkage_group` - the peak LOD position on that linkage group is taken by default. Alternatively, a specific position can be supplied using argument `cM` (check out `?exploreQTL` for extra details).
+
+The function by default plots the BIC (Bayesian Information Criterion) for each of the models supplied. The BIC gives a measure of the likelihood of the different QTL models tested. Note that we did not actually supply a list of different models to test to the function - a pre-defined list was looked up by the function instead. Different models can be supplied using the `QTLconfig` argument. To see the default list that was supplied in the case of a tetraploid, use the following code:
+
+```{r}
+default_QTLconfig <- get("segList_4x",envir = getNamespace("polyqtlR"))
+default_QTLconfig[1:2]
+
+length(default_QTLconfig)
+```
+
+For a triploid population we would get "segList_3x" *etc*. Here we see the first 2 models out of a total of 224 models tested, the first being "Qooo x oooo" ("\$homs" = 1) and additive ("\$mode" = "a"), the second being "oQoo x oooo" and additive, *etc*.
+
+From the plot we see that model 1 was actually the most likely. The function also reports what this model was, but we can also check out the first element of the previously-defined `default_QTLconfig` as follows:
+
+```{r}
+default_QTLconfig[[1]] #replace 1 with 27 to see the second most-likely model
+```
+
+The green dashed line is the default cut-off for competing QTL models, which is any model within 6 BIC units of the minimum BIC. This can be adjusted using the `deltaBIC` argument. Currently, the function only considers simple additive and dominant bi-allelic QTL models, although testing multi-allelic QTL models is also possible and has already been implemented previously [@Bourke2019]. Please contact the author if you would require more model flexibility (however for many purposes it is arguably better to stick to a range of simpler models to prevent over-fitting).
+
+It can also be helpful to visualise the QTL effects for comparison purposes. This can be achieved as follows:
+
+```{r eval = FALSE}
+visualiseQTLeffects(IBD_list = IBD_4x,
+                    Phenotype.df = blues,
+                    genotype.ID = "geno",
+                    trait.ID = "blue",
+                    linkage_group = 1,
+                    LOD_data = qtl_LODs.4x)
+```
+
+```{r, out.width = "780px", echo = FALSE}
+knitr::include_graphics("figures/qtl_effects.png")
+```
+
+The visualisation appears to be consistent with the predicted model, *i.e.* that the allele originating from homologue 1 of parent 1 contributes positively to the trait. Note that there is a limitation to predicting the effects of specific alleles within a mapping population, as there is no reference against which to compare. We have opted here to display the differences between the overall (fixed) population mean and the mean trait value of individuals carrying each of homologues in turn. As such, we are using the whole population as a reference, even though it is a mix of individuals with different allelic compositions. This is not ideal, but is probably the best we can do. An alternative would be to choose one of the parental alleles as a reference level and determine the contrasts between that allele and each of the others in turn. Here again there would be a mixing of signals, as polyploid individuals carry multiple alleles. In short, the results presented here from the exploration of the QTL peak should be interpreted with caution. Larger population sizes may help clarify the resolution of allele effects, but the best situation would be to compare the effects of specific alleles across multiple populations.
+
+### Compare QTL results with offspring
+
+We might also like to see whether the QTL results tally with the allelic conformation of the population if sorted by phenotype. For this, we use the `display_by = "phenotype"` argument in the `visualiseHaplo` function. First, we look at the distribution of (BLUE) phenotypes of the population:
+
+```{r}
+hist(x = blues$blue)
+```
+
+Suppose we are only interested in offspring with a trait value higher than 44. We can choose to only display the haplotypes of these offspring as follows:
+
+```{r eval = FALSE}
+visualiseHaplo(IBD_list = IBD_4x,
+               display_by = "phenotype",
+               Phenotype.df = blues,
+               genotype.ID = "geno",
+               trait.ID = "blue",
+               pheno_range = c(44,max(blues$blue)),
+               linkage_group = 1,
+               multiplot = c(3,3))
+```
+
+```{r, out.width = "780px", echo = FALSE}
+knitr::include_graphics("figures/fish_hom1.png")
+```
+
+All these offspring seem to carry homologue 1 as anticipated, although certain individuals (like F1_24) possess recombinations in the region of the QTL, which might be of interest for further fine-mapping work. However, the main point here is that the results seem to be consistent with the predictions from the BIC analysis.
+
+
+<a name="sect8"></a>
+
+## Single Marker Analysis
+The usual method of QTL detection in polyploid mapping populations is to use single-marker approaches, looking for associations between marker allele dosages and the trait of interest. The function `singleMarkerRegresion` does this, again using a permutation test to determine significance thresholds. While IBD-based analyses require markers to be present on a linkage map, single-marker analyses have no such constraints and therefore all markers can be included in the analysis, even if they did not map. By also providing a linkage map, visualisations will be more informative - since any unmapped markers will be assigned to chromosome 0 for plotting, with no meaningful order.
+
+A single marker analysis can be performed as follows:
+
+```{r eval = FALSE}
+qtl_SMR.4x <- singleMarkerRegression(dosage_matrix = SNP_dosages.4x,
+                                     Phenotype.df = blues,
+                                     genotype.ID = "geno",
+                                     trait.ID = "blue",
+                                     return_R2 = TRUE,
+                                     perm_test = TRUE,
+                                     ncores = nc,
+                                     maplist = phased_maplist.4x)
+```
+
+```{r echo = FALSE}
+qtl_SMR.4x <- readRDS("qtl_SMR.4x.RDS")
+```
+
+The results can be plotted alongside the IBD-based results using any of the plotting functions introduced earlier, *e.g.*:
+
+```{r}
+plotLinearQTL_list(LOD_data.ls =  list(qtl_LODs.4x,
+                                       qtl_SMR.4x),
+                   plot_type = c("lines","points"), #IBD results as lines, SMR results as points..
+                   pch = 19,
+                   colours = c("darkgreen","navyblue"))
+```
+
+
+<a name="pve"></a>
+
+## PVE
+
+It is often useful to estimate the percentage of variance explained (PVE) by your maximal QTL model. The function `PVE` computes this, as well as looking at all possible sub-models. In this example it is pretty trivial, as there was only a single QTL detected which explains about 31% of the phenotypic variation:
+
+```{r}
+PVE(IBD_list = IBD_4x,
+                Phenotype.df = Phenotypes_4x,
+                genotype.ID = "geno",
+                trait.ID = "pheno",
+                block = "year",
+                QTL_df = data.frame("LG" = 1,"type" = "position","id" = 12.3))
+```
+
+<a name="sect9"></a>
+
+## Meiosis & Recombinations
+
+We have by now identified the major QTL affecting our trait, and both explored and visualised the allelic effects at the QTL peak positions. However there are a number of remaining topics that could lead to a more complete understanding, leveraging the information contained in the IBD probabilities.
+
+### Meiosis report
+
+It is interesting to look at what went on in parental meiosis in the population, as it may give an indication on *e.g.* the pairing behaviour of chromosomes during meiosis. For many polyploid crops this is not necessarily a well-understood process, so we provide som tools to help give insights into whether your species of interest is autopolyploid, allopolyploid or something in between ("segmental allopolyploid"). 
+
+To this end, we run the function `meiosis_report` as follows:
+
+```{r eval = FALSE}
+mr <- meiosis_report(IBD_list = IBD_4x)
+```
+
+```{r, out.width = "500px", echo = FALSE}
+knitr::include_graphics("figures/mr1.png")
+```
+
+```{r, out.width = "500px", echo = FALSE}
+knitr::include_graphics("figures/mr2.png")
+```
+
+Apart from visualising the deviations (in counts) from a purely random bivalent pairing model, the function also analyses all predicted bivalent pairings and performs an uncorrected $\chi^2$ test to detect deviations from a polyomic model. If multivalents were also included during IBD estimation these are also counted and recorded, but do not contribute to the $\chi^2$ test or output plots. Note that the colour of the output plot conveys information about the results of the $\chi^2$ test: green signifying no strong deviation from a polysomic model, while red colours indicating a more severe deviation from a polysomic model. In this example, there is no suggestion of anything but polysomic inheritance, associated with autopolyploidy.
+
+### Recombination landscape
+It can be very informative to perform an analysis of all the predicted recombinations (from cross-over events), as these can indicate issues such as poor map order, problematic individuals (carrying too many predicted recombinations) or errors in marker phase. The position of these can also be biologically relevant, indicating recombination hot-spots or cold-spots. They also provide a means to correct genotyping errors, if we take the view that genotyping errors are a more likely cause of multiple recombination events in an individual rather than cross-overs (which they usually are). In short, an analysis of the recombination landscape offers a lot of scope for improved understanding on many levels.
+
+Within `polyqtlR` a number of tools are provided for this. We start by looking at the function `count_recombinations`, which generates a summary of the recombination events per linkage group and per individual:
+
+```{r}
+recom.ls <- count_recombinations(IBD_4x)
+```
+
+
+Note that this function has only been implemented in the context of bivalent pairing - a likely future update is to also consider and count recombination events from multivalents.
+
+The output is a rather long list giving, per linkage group and per individual the probability of the most likely pairing configuration and the most likely positions of the recombination break-point (taken as the midpoint of the two bounding positions which define the interval). Although we do not know the precise break-point around cross-over events, this value can be taken as indicative of the likely location. To then make sense of this list we call on the visualisation function `plotRecLS` (**plot** the **Rec**ombination **L**and**S**cape) to plot the results and return some summary information from the plots:
+
+```{r}
+layout(matrix(c(1,3,2,3),nrow=2)) #make tidy layout
+RLS_summary <- plotRecLS(recom.ls) #capture the function output as well
+```
+
+The green lines show a fitted spline to the recombination count data - which are also returned by the function. Indeed, if you explore the output saved in `RLS_summary` you should see that there are two items: `$per_LG` and `per_individual`. In the per-linkage group item, recombination rates that have been interpolated using the splines (`rec.rates`) are given (per linkage group). In the per-individual item, a named vector of the genome-wide counts of recombinations is given, which can be useful in identifying offspring that perhaps should not have been included in the mapping.
+
+It is also of interest to overlay the predicted recombinations with the visualised haplotypes. This can be done with the `visualiseHaplo` function, similar to what we did earlier but now adding the argument `recombination_data` to the call:
+
+```{r, fig.width = 8, fig.height = 7}
+visualiseHaplo(IBD_list = IBD_4x,
+               display_by = "name",
+               linkage_group = 1,
+               select_offspring = colnames(SNP_dosages.4x)[3:11], #cols 1+2 are parents
+               multiplot = c(3,3), #plot layout in 3x3 grid
+               recombination_data = recom.ls) 
+```
+
+It is interesting to note the problems with reconstructing the inheritance probabilities of individual F1_01 - compare this to the reconstruction [earlier](#sect4) when we also allowed for multivalents and double reduction. F1_04 has also been reconstructed differently, but here the bivalent-only based prediction does not seem to have caused serious conflicts.
+
+### Searching for recombinant individuals
+
+We have analysed the recombination landscape, but suppose for the sake of argument we were interested in all offspring that had inherited homologues 1 and 3 from linkage group 1 in the region of our detected QTL. Although we only found evidence for a positive effect of homologue 1, we could imagine a different dataset where there was a second QTL on homologue 3 some distance away. If we wanted to stack these QTL, then recombinant offspring could offer the possibility of stacking these QTL in coupling linkage. We can search for these individuals using the `visualiseHaplo` function. 
+
+We display the offspring by "name" as [before](#sect4). However, we now also provide details of the `recombinant_scan` homologues that we are interested in. The output of this initial function call will be used in the subsequent step, so we save the output as "visHap1". We will also use multi-plotting for convenience. Note that the plots have been suppressed here (as there are too many of them to begin with):
+
+```{r eval = FALSE}
+visHap1 <- visualiseHaplo(IBD_list = IBD_4x,
+                          display_by = "name",
+                          select_offspring = "all",
+                          linkage_group = 1,
+                          cM_range = c(1.56,50),
+                          recombinant_scan = c(1,3),
+                          multiplot = c(4,2))
+```
+
+We now look at the output of the function:
+
+```{r echo = FALSE, purl = FALSE}
+visHap1 <- readRDS("visHap1.RDS")
+```
+
+```{r}
+visHap1
+```
+
+Six offspring have been identified as having a recombination in this region. There may be others, as this function is only searching among the IBD results for potential recombinants and may miss some with less clear features. However, six is already enough to continue with. We pass the names of these individuals to the function again (in place of "all" offspring) using the `select_offspring` argument, and specifying the individuals mentioned in `visHap1$recombinants`, and specifying the desired region of `linkage_group` 1 using `cM_range` as follows:
+
+```{r, fig.width = 8, fig.height = 7}
+visualiseHaplo(IBD_list = IBD_4x,
+               display_by = "name",
+               select_offspring = visHap1$recombinants,
+               linkage_group = 1,
+               cM_range = c(1.56,50),#note: start position = first marker @1.56 cM
+               recombinant_scan = c(1,3),
+               multiplot = c(3,2),
+               recombination_data = recom.ls) # we can add this track for clarity
+```
+
+In each of these individuals we can see evidence for a recombination between homologues 1 and 3 in the specified region.
+
+*Note* - currently this process takes two steps, which could be confusing. A planned update will allow this to be done in a single step, using the `recombination_data` instead.
+
+<a name="fish"></a>
+
+### Fishing for specific alleles
+
+The other output associated with the function is `$allele_fish`, which allows us to fish out individuals that carry a particular allele or combinations of alleles around a particular locus. Suppose we were just interested in the offspring that carried homologue 1 of chromosome 1 around the QTL, so in the region up to 15 cM say. We can "fish out" these individuals as follows:
+
+```{r eval = FALSE}
+visHap2 <- visualiseHaplo(IBD_list = IBD_4x,
+                           display_by = "name",
+                           select_offspring = "all",
+                           linkage_group = 1,
+                           cM_range = c(1.56,15),
+                           allele_fish = 1,
+                           multiplot = c(4,2)) 
+```
+
+Note that these individuals must carry homologue 1 for almost all of the specified segment - therefore specifying a longer segment could also result in *fewer* individuals (as they are more likely to carry recombined chromosomes). As before, we can inspect the output of this function call as follows:
+
+```{r echo = FALSE, purl = FALSE}
+visHap2 <- readRDS("visHap2.RDS")
+```
+
+```{r}
+visHap2
+```
+
+Here there are 16 offspring carrying that particular segment of homologue 1. We can visualise them using a call to the `visualiseHaplo` function as before:
+
+```{r fig.width = 7, fig.height = 7}
+visualiseHaplo(IBD_list = IBD_4x,
+               display_by = "name",
+               select_offspring = visHap2$allele_fish$h1,
+               linkage_group = 1,
+               cM_range = c(1.56,15),
+               multiplot = c(4,4))
+```
+
+If all went well, these offspring should all possess the homologue 1 allele in this particular region. Examining the plots shows this to be the case.
+
+<a name="error"></a>
+
+## Correcting genotyping errors
+
+One final topic that is useful to include here is that of error correction in our marker genotypes. Particularly when using some next-generation sequencing based methods for genotyping, errors in the data can become quite a problem. One of the many applications of IBD probabilities (and their method of estimation) is to try to determine what the offspring in a population actually inherited in terms of their parental alleles. In the Hidden Markov Model introduced [earlier](#hmm), we did not discuss choice of prior for genotyping errors. The function uses a default prior of 0.01. What this means in practice is that we put a very high weight on our genotype observations: with such a prior in a tetraploid, the probability that an offspring score of '1' is in fact a true '1' is 0.99, while the probability of it being 0, 2, 3 or 4 is 0.01 (and therefore the probability of its true state being 0 is only 0.01/4 *i.e.* only 0.25 %). This is clearly a very strong prior on our observed genotype values and can lead to many erroneous recombinations being predicted.
+
+A very simple solution to this issue when there seems to be evidence of many genotyping errors (see previous [haplotype plot](#hp) for an example) is to increase the error prior when estimating the IBD probabilities, to effectively suppress incorrect prediction of double recombination events. If time allows, you can play around here with various error prior probabilities, and look at their effect on the overall recombination counts that were predicted, as explored in the previous section. But generally, a prior of 0.5 or higher is recommended for this purpose. Remember, an error prior of 0.8 in a tetraploid means we actually consider all possible dosage scores as equally likely (with a probability of 0.2). Setting an error prior at this level is also rather extreme.  
+
+Once you are happy with the results (again, using the visualisation tools described earlier) you have one further possibility open to you: to re-impute your marker genotypes given these "smoothed" IBD probabilities. This can be achieved using the function `impute_dosages`. But first we need to introduce some genotyping errors, and then re-estimate the IBDs using a higher error prior:
+
+```{r}
+# Copy our dosage matrix to a new matrix:
+error_dosages <- SNP_dosages.4x
+
+# Only work with offspring errors for now:
+F1cols <- 3:ncol(error_dosages)
+
+# Count number of (offspring) dosage scores:
+ndose <- length(error_dosages[,F1cols])
+
+# Generate a vector of random scores, 10% of data size:
+errors <- sample(0:4,round(ndose*0.1),replace = TRUE)
+
+# Replace real values with these random scores (simple error simulation):
+error_dosages[,F1cols][sample(1:ndose,length(errors))] <- errors
+
+# Re-estimate IBD probabilities, using a high error prior of 0.3:
+IBD_4x.err <- estimate_IBD(phased_maplist = phased_maplist.4x,
+                           genotypes = error_dosages,
+                           ploidy = 4,
+                           error = 0.3,
+                           ncores = nc)
+# Re-impute marker dosages
+new_dosages <- impute_dosages(IBD_list=IBD_4x.err,dosage_matrix=error_dosages,
+               min_error_prior = 0.05,
+               rounding_error = 0.2)
+
+# Check the results:
+round(length(which(error_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
+
+round(length(which(new_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
+```
+
+So having had 8% genotyping errors to begin with (we didn't quite manage 10% as some of the replaced scores were the same as the original ones by chance!) we have reduced the error rate in the data to 1%, but also introduced 2.4% missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in QTL detection (even just using IBD probabilities estimated with a high error prior when the visualised haplotypes seem problematic).
+
+## Concluding remarks
+We hope you have been able to successfully run a QTL analysis using your data and the methods described here. The package may still be further improved and developed, and feedback on performance, suggestions for improvements / extensions and bug reporting is most welcome; please contact the developer Peter Bourke (peter.bourke _at_ wur.nl).
+
+<a name="sect10"></a>
+
+## References
