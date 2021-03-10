@@ -9,7 +9,7 @@ TM.biv.2(m1, r_vect)
 \arguments{
 \item{m1}{marker}
 
-\item{r_vect}{Vector of adjacent recombiantion frequencies}
+\item{r_vect}{Vector of adjacent recombination frequencies}
 }
 \description{
 Bivalent-pairing transition matrix function, diploid

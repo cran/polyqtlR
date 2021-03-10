@@ -23,6 +23,7 @@ plotLinearQTL(
   use_LG_names = FALSE,
   axis_label.cex = 1,
   custom_LG_names = NULL,
+  LGdiv.col = "gray42",
   ...
 )
 }
@@ -67,6 +68,8 @@ which can be useful for subsequent plot manipulations and overlays.}
 \item{axis_label.cex}{Argument to adjust the size of the axis labels, can be useful if there are many linkage groups to plot}
 
 \item{custom_LG_names}{Specify a vector that contains custom linkage group names. By default \code{NULL}}
+
+\item{LGdiv.col}{Colour of dividing lines between linkage groups, by default grey.}
 
 \item{\dots}{Arguments passed to \code{\link{plot}}, and \code{\link{lines}} or \code{\link{points}} as appropriate (see argument \code{plot_type}).}
 }

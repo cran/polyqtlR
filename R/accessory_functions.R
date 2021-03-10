@@ -252,7 +252,7 @@ fast_IBD <- function(phased_maplist,
             near_inf <- apply(mdist, 1, which.min)
             gps <- mdist
             if(any(inf1)){
-              gps[,names(inf1)[inf1]] <- 1 - gps[,names(inf1)[inf1]]
+              gps[,names(inf1)[inf1]] <- 1 - gps[,names(inf1)[inf1]] 
             }
             garray[rownames(mdist),h,g] <- gps[cbind(seq(near_inf), near_inf)]
           }
@@ -275,6 +275,9 @@ fast_IBD <- function(phased_maplist,
                   "map" = cbind("chromosome" = i,
                                 posdf),
                   "parental_phase" = ph,
+                  "marginal.likelihoods" = NULL,
+                  "valency" = NULL,
+                  "offspring" = dimnames(garray)[[3]],
                   "biv_dec" = NULL,
                   "gap" = NULL,
                   "genocodes" = NULL,
@@ -618,6 +621,8 @@ hexTM <- function(r)
 #' Currently only \code{"haldane"} or \code{"kosambi"} are allowed.
 #' @param bivalent_decoding Option to consider only bivalent pairing during formation of gametes (ignored for diploid populations, as only bivalents possible there), by default \code{TRUE}
 #' @param error The (prior) probability of errors in the offspring dosages, usually assumed to be small but non-zero
+#' @param full_multivalent_hexa Option to allow multivalent pairing in both parents at the hexaploid level, by default \code{FALSE}. Note that if \code{TRUE},
+#' a very large available RAM may be required (>= 32Gb) to process the data.  
 #' @param verbose Logical, by default \code{TRUE}. Should progress messages be written?
 #' @param ncores How many CPU cores should be used in the evaluation? By default 1 core is used.
 #' @return A list of IBD probabilities, organised by linkage group (as given in the input \code{phased_maplist}). Each
@@ -658,6 +663,7 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
                                      map_function = "haldane",
                                      bivalent_decoding = TRUE,
                                      error = 0.01,
+                                     full_multivalent_hexa = FALSE,
                                      verbose = FALSE,
                                      ncores = 1){
   input_type <- match.arg(input_type, choices = c("discrete","probabilistic"))
@@ -667,6 +673,7 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
   ploidyF1 <- (ploidy + ploidy2)/2
   
   if(ploidy2 > ploidy) stop("Currently, ploidy2 cannot exceed ploidy. Please re-order parents (may become fully generalised later).")
+  if(!(error > 0 & error < 1)) stop("Error prior probability must be a number > 0 and less than 1")
   
   map_function <- match.arg(map_function, choices = c("haldane","kosambi"))
   
@@ -763,6 +770,9 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
     #   }
     # }
     for(i in seq(length(phased_maplist))) {
+      
+      if(!all(rownames(phased.dose[[i]]) %in% rownames(genotypes))) stop("Issue matching marker names from phased map with supplied genotype matrix. Please check!")
+      
       if(!all(apply(phased.dose[[i]] == genotypes[rownames(phased.dose[[i]]),c(parent1,parent2)],1,all))){
         message(paste("Inconsistent dosages on LG",i,"encountered, concerning the following markers:"))
         print(rownames(phased.dose[[i]])[which(!apply(phased.dose[[i]] == genotypes[rownames(phased.dose[[i]]),1:2],1,all))])
@@ -774,14 +784,16 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
   }
   
   ## Generate the list of valencies and genotype states
-  statefun.ls <- state_fun(ploidy = ploidy, ploidy2 = ploidy2, bivalent_decoding = bivalent_decoding)
+  statefun.ls <- state_fun(ploidy = ploidy, ploidy2 = ploidy2, 
+                           bivalent_decoding = bivalent_decoding,
+                           full_multivalent_hexa = full_multivalent_hexa)
   state.ls <- statefun.ls$state.ls
   all.states <- statefun.ls$all.states
   
   ##-----------------------------------------------------------------------
   ## Forward and Backward algorithms (from Durbin et al. 1998, pp. 58 - 59)
   ##-----------------------------------------------------------------------
-  
+
   forward_backward <- function(F1num=1,
                                ploidy_fb,
                                state_matrix,
@@ -944,7 +956,10 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
       
       return(list("IBD" = IBDs_output,
                   "allstates" = allstates,
-                  "P_V" = P_V)) #Currently there are no names with this
+                  "P_V" = P_V,
+                  # "marginal.likelihood" = setNames(Pval_type[ML_val],names(state_ls)[ML_val]))
+                  "marginal.likelihoods" = matrix(Pval_type, ncol = 1, dimnames = list(names(state_ls),"logL")))
+             ) 
     } #generate_IBDs
     ################
     
@@ -961,20 +976,24 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
     IBDs.ls <- lapply(IBD.list,function(x) x$IBD)
     pairing.probs <- lapply(IBD.list,function(x) x$P_V)
     IBDarray <- abind::abind(IBDs.ls,along = 3)
+    marginal.L <- lapply(IBD.list,"[[","marginal.likelihoods")
     
     if(input_type == "discrete"){
-      names(pairing.probs) <- colnames(progeny)[offspring]
-      dimnames(IBDarray)[[3]] <- colnames(progeny)[offspring]
+      offspring.names <- colnames(progeny)[offspring]
     } else{
-      names(pairing.probs) <- dimnames(progeny)[[3]][offspring]
-      dimnames(IBDarray)[[3]] <- dimnames(progeny)[[3]][offspring]
+      offspring.names <- dimnames(progeny)[[3]][offspring]
     }
     
+    names(pairing.probs) <- dimnames(IBDarray)[[3]] <- names(marginal.L) <- offspring.names
+      
     return(list("IBDtype" = "genotypeIBD",
                 "IBDarray" = IBDarray,
                 "map" = cbind("chromosome" = lg,
                               map),
                 "parental_phase" = par.phase,
+                "marginal.likelihoods" = marginal.L,
+                "valency" = sapply(marginal.L,function(x) rownames(x)[which.max(x)]),
+                "offspring" = offspring.names,
                 "biv_dec" = bivalent_decoding,
                 "gap" = NULL, #Add gap later if splining...
                 "genocodes" = dimnames(IBDarray)[[2]],
@@ -1143,7 +1162,8 @@ quadTM <- function(r)
 #' @param ploidy Ploidy of parent 1
 #' @param ploidy2 Ploidy of parent 2
 #' @param bivalent_decoding Logical, if \code{FALSE} then multivalent pairing assumed
-state_fun <- function(ploidy, ploidy2, bivalent_decoding){
+#' @param full_multivalent_hexa Should multivalent pairing be considered in both parents simultaneously in hexaploids?
+state_fun <- function(ploidy, ploidy2, bivalent_decoding, full_multivalent_hexa = FALSE){
   
   ploidyF1 <- (ploidy + ploidy2)/2
   
@@ -1236,14 +1256,21 @@ state_fun <- function(ploidy, ploidy2, bivalent_decoding){
       
       BH.ls_6x <- lapply(P1val.list, function(cl1) gen_state.mat(cl1,P2hexa.combs))
       HB.ls_6x <- lapply(P2val.list, function(cl2) gen_state.mat(P1hexa.combs,cl2))
-      # HH.ls_6x <- list("ABCDEF-GHIJKL" = gen_state.mat(P1hexa.combs,P2hexa.combs))
       
       names(BH.ls_6x) <- paste0(names(BH.ls_6x),"-GHIJKL")
       names(HB.ls_6x) <- paste0("ABCDEF-",names(HB.ls_6x))
       
-      state.ls <- list("BB" = BB.ls_6x,"BH" = BH.ls_6x,"HB" = HB.ls_6x)#,"HH" = HH.ls_6x)
-      all.states <- sort(unique(c(sapply(BH.ls_6x,rownames),sapply(HB.ls_6x,rownames))))
-      
+      if(full_multivalent_hexa) {
+        HH.ls_6x <- list("ABCDEF-GHIJKL" = gen_state.mat(P1hexa.combs,P2hexa.combs))
+        state.ls <- list("BB" = BB.ls_6x,"BH" = BH.ls_6x,"HB" = HB.ls_6x,"HH" = HH.ls_6x)
+        
+        all.states <- sort(rownames(HH.ls_6x[[1]]))
+        
+      } else{
+        state.ls <- list("BB" = BB.ls_6x,"BH" = BH.ls_6x,"HB" = HB.ls_6x)#,"HH" = HH.ls_6x)
+        all.states <- sort(unique(c(sapply(BH.ls_6x,rownames),sapply(HB.ls_6x,rownames))))
+        }
+    
     } else{
       state.ls <- list("BB" = BB.ls_6x)
       all.states <- gen_state.mat(v1,v2,onlyNames = TRUE)
@@ -1335,7 +1362,7 @@ test_probgeno_df <- function(probgeno_df,
 
 #' Bivalent-pairing transition matrix function, diploid
 #' @param m1 marker
-#' @param r_vect Vector of adjacent recombiantion frequencies
+#' @param r_vect Vector of adjacent recombination frequencies
 TM.biv.2 <- function(m1,r_vect) {
   if(m1 == 0){
     out <- bivTM(0.5)
@@ -1347,7 +1374,7 @@ TM.biv.2 <- function(m1,r_vect) {
 
 #' Bivalent-pairing transition matrix function, tetraploid
 #' @param m1 marker
-#' @param r_vect Vector of adjacent recombiantion frequencies
+#' @param r_vect Vector of adjacent recombination frequencies
 TM.biv.4 <- function(m1,r_vect) {
   if(m1 == 0){
     out <- kronecker(bivTM(0.5),bivTM(0.5)) #Starting transition matrix as one of the positions is 0 (i.e. in initialisation state)
@@ -1359,7 +1386,7 @@ TM.biv.4 <- function(m1,r_vect) {
 
 #' Bivalent-pairing transition matrix function, hexaploid
 #' @param m1 marker
-#' @param r_vect Vector of adjacent recombiantion frequencies
+#' @param r_vect Vector of adjacent recombination frequencies
 TM.biv.6 <- function(m1,r_vect) {
   if(m1 == 0){
     out <- kronecker(bivTM(0.5),kronecker(bivTM(0.5),bivTM(0.5)))
@@ -1371,7 +1398,7 @@ TM.biv.6 <- function(m1,r_vect) {
 
 #' Hexavalent-pairing transition matrix function, hexaploid
 #' @param m1 marker
-#' @param r_vect Vector of adjacent recombiantion frequencies
+#' @param r_vect Vector of adjacent recombination frequencies
 #' @param rem_hex Index of genotype classes to remove, work-around from overly-general transition matrix with redundant classes
 TM.hex <- function(m1,r_vect,rem_hex = rem.hex) {
   if(m1 == 0){
@@ -1385,7 +1412,7 @@ TM.hex <- function(m1,r_vect,rem_hex = rem.hex) {
 
 #' Quadrivalent-pairing transition matrix function, tetraploid
 #' @param m1 marker
-#' @param r_vect Vector of adjacent recombiantion frequencies
+#' @param r_vect Vector of adjacent recombination frequencies
 #' @param rem_quad Index of genotype classes to remove, work-around from overly-general transition matrix with redundant classes
 TM.quad <- function(m1,r_vect,rem_quad = rem.quad) {
   if(m1 == 0){
@@ -1399,7 +1426,7 @@ TM.quad <- function(m1,r_vect,rem_quad = rem.quad) {
 
 #' Diploid bi-parental transition matrix
 #' @param m1 marker
-#' @param r_vect Vector of adjacent recombiantion frequencies
+#' @param r_vect Vector of adjacent recombination frequencies
 TMfun.2x_B <- TM.biv.4
 
 #' Triploid bi-parental transition matrix, bivalent-bivalent pairing
@@ -1437,6 +1464,11 @@ TMfun.6x_BH <- function(...) kronecker(TM.biv.6(...), TM.hex(...))
 #' Hexaploid bi-parental transition matrix, hexavalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
 TMfun.6x_HB <- function(...) kronecker(TM.hex(...), TM.biv.6(...))
+
+#' Hexaploid bi-parental transition matrix, hexavalent-hexavalent pairing
+#' @param \dots Arguments passed to parental TM functions
+TMfun.6x_HH <- function(...) kronecker(TM.hex(...), TM.hex(...)) #this becomes computationally intractable
+
 
 #' Calculate the weighted variance
 #' @description Generalisation of the variance to include weights

@@ -20,6 +20,8 @@ plotLinearQTL_list(
   thresh.lwd = 2,
   thresh.col = "darkred",
   return_plotData = FALSE,
+  highlight_positions = NULL,
+  LGdiv.col = "gray42",
   ...
 )
 }
@@ -56,10 +58,17 @@ and using \code{par(mar=c(0,4.1,4.1,2.1))} allows subsequent plots to be neatly 
 \item{return_plotData}{Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned,
 which can be useful for subsequent plot manipulations and overlays.}
 
+\item{highlight_positions}{Option to include a list of associated positions to highlight, of the same length and in the same order as \code{LOD_data.ls}.
+Each set of positions should be provided in data.frame format with 3 columns corresponding to linkage group, type and ID (same format as the cofactor.df 
+argument of function \code{\link{QTLscan}}. This can be useful if genetic co-factor analyses are being compared. 
+If no position is to be highlighted, add the corresponding list element as \code{NULL}.}
+
+\item{LGdiv.col}{Colour of dividing lines between linkage groups, by default grey.}
+
 \item{\dots}{Arguments passed to \code{\link{lines}} or \code{\link{points}} as appropriate (see argument plot_type).}
 }
 \value{
-The plot data, if return_plotData = TRUE. Otherwise \code{NULL}
+The plot data, if \code{return_plotData = TRUE}, otherwise \code{NULL}
 }
 \description{
 Extension of the \code{\link{plotLinearQTL}} function, taking as input a list generated from combining the output of \code{\link{QTLscan}}.

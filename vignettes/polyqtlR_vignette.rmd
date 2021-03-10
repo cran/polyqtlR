@@ -79,6 +79,12 @@ As the IBD data are the most central objects in this package it is worth spendin
 
 * **parental_phase** The phasing of the markers in the parental map
 
+* **marginal.likelihoods** A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise `NULL`
+
+* **valency** The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", `NULL`
+
+* **offspring** The offspring names
+
 * **biv_dec** Whether bivalents only (`TRUE`) or also multivalents were allowed (`FALSE`) in the procedure 
 
 * **gap** Here `NULL`, but later this can hold a numeric value (e.g. 1 cM) if IBDs are 'splined' or interpolated.
@@ -100,7 +106,9 @@ All functions within `polyqtlR` for estimating or importing IBD probabilities wi
 <a name="hmm"></a>
 
 ### HMM for IBD estimation
-The `estimate_IBD` function of `polyqtlR` with the default setting `method = "hmm"` estimates offspring IBD probabilities using a Hidden Markov Model (HMM) proposed by Zheng et al [@Zheng2016] but generalised here to multiple ploidy levels. Currently, diploid (2x), triploid (3x = 4x $\times$ 2x), tetraploid (4x) and hexaploid (6x) populations are handled. `genotypes` can either be discrete (*i.e.* integer marker dosage scores), or probabilistic (*i.e.* the probabilities of each of the ploidy + 1 possible scores). For tetraploids and hexaploids, the possibility of incorporating double reduction [@Bourke2015] (*i.e.* allowing for the phenomenon of multivalent pairing) is available, although this can have serious performance implications for hexaploids (and in hexaploids, the option of allowing multivalent pairing in *both* parents for the same chromosome has been disabled as it led to unacceptable RAM requirements (> 16 Gb)). Some of the code used to estimate these IBD probabilities has been programmed in C++ to improve performance, and relies on both the `Rcpp` and `RcppArmadillo` packages to provide the interface between R, C++ and the Armadillo C++ library.
+The `estimate_IBD` function of `polyqtlR` with the default setting `method = "hmm"` estimates offspring IBD probabilities using a Hidden Markov Model (HMM) proposed by Zheng et al [@Zheng2016] but generalised here to multiple ploidy levels. Currently, diploid (2x), triploid (3x = 4x $\times$ 2x), tetraploid (4x) and hexaploid (6x) populations are handled. `genotypes` can either be discrete (*i.e.* integer marker dosage scores), or probabilistic (*i.e.* the probabilities of each of the ploidy + 1 possible scores). For tetraploids and hexaploids, the possibility of incorporating double reduction [@Bourke2015] (*i.e.* allowing for the phenomenon of multivalent pairing) is available, although this can have serious performance implications for hexaploids (and in hexaploids, the option of allowing multivalent pairing in *both* parents for the same chromosome is by default disabled as it requires very high RAM requirements (> 32 Gb). Use argument `full_multivalent_hexa = TRUE` to allow multivalents simultaneously at the same position from both hexaploid parents). 
+
+Some of the code used to estimate these IBD probabilities has been programmed in C++ to improve performance, and relies on both the `Rcpp` and `RcppArmadillo` packages to provide the interface between R, C++ and the Armadillo C++ library.
 
 We run the function, in this case allowing for multivalents (`bivalent_decoding = FALSE`), as follows:
 
@@ -112,9 +120,9 @@ IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
                        ncores = 4)
 ```
 
-For convenience the default setting of `bivalent_decoding` is `TRUE`, as the function evaluates faster if only bivalents are considered (the difference in run-time becomes more pronounced for hexaploids). We also cannot estimate the [genotypic information coefficient](#sect5) if `bivalent_decoding = FALSE`.
+Note that the default setting of `bivalent_decoding` is `TRUE`, as the function evaluates faster if only bivalents are considered (the difference in run-time becomes more pronounced for hexaploids). However, allowing multivalents in the model gives a more complete and correct picture.
 
-Here we chose to enable parallel processing to speed up the calculations (jobs are split across linkage groups, so with 5 linkage groups it would have made more sense to use 5 cores if they were available). Use `parallel::detectCores()` to display how many CPU cores are available, and use 1 or 2 less than this at the very most. In this dataset there are only 2 linkage groups, so no more than 2 cores will be used.
+Here we chose to enable parallel processing to speed up the calculations. Note that jobs are split across linkage groups, so with 5 linkage groups it would have made more sense to use 5 cores if they were available. Use `parallel::detectCores()` to display how many CPU cores are available, and use 1 or 2 less than this at the very most. In this dataset there are only 2 linkage groups, so no more than 2 cores are needed.
 
 ```{r eval = FALSE}
 nc <- parallel::detectCores() - 1
@@ -137,7 +145,7 @@ IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
 Note that the attribute `IBDtype` is now `haplotypeIBD`, referring to the fact that these IBDs are the probabilities of inheriting each parental haplotype at a locus, as opposed to the probabilities of inheriting particular combinations of parental alleles at a locus (`genotypeIBD`). Although similar, certain downstream functions such as `exploreQTL` can only work with the former (although you will still be able to visualise QTL allele effects with the `visualiseQTL` function). The accuracy of these IBDs is generally *lower* than if `method = "hmm"` had been used (and therefore the power of subsequent QTL analyses will be somewhat reduced). 
 
 ### Importing IBDs from TetraOrigin
-TetraOrigin produces by default a large .txt output file after running the function "inferTetraOrigin". However, it is convenient to produce a summary of this output using the "saveAsSummaryITO" function, which produces a .csv file summarising the results. Information on how to use TetraOrigin is provided with the package itself, downloadable from [GitHub](https://github.com/chaozhi/TetraOrigin). In particular, the software offers users the option of estimating IBDs under the assumption of bivalent pairing or also allowing for multivalents during meiosis. In general, allowing for multivalents offers a more complete description of autopolyploid meiosis, but it does not make a large difference to the final QTL results which model is used [@Bourke2019]. A good option is to run the analysis using both approaches - if this is done, make sure that the same estimated parental phasing is used, otherwise the numbering of parental haplotypes will likely be inconsistent. 
+TetraOrigin produces by default a large .txt output file after running the function "inferTetraOrigin". However, it is convenient to produce a summary of this output using the "saveAsSummaryITO" function, which produces a .csv file summarising the results. Information on how to use TetraOrigin is provided with the package itself, downloadable from [GitHub](https://github.com/chaozhi/TetraOrigin). In particular, the software offers users the option of estimating IBDs under the assumption of bivalent pairing or also allowing for multivalents during meiosis. In general, allowing for multivalents offers a more complete description of autopolyploid meiosis, but it does not make a large difference to the final QTL results which model is used [@Bourke2019]. 
 
 The function `import_IBD` imports the .csv output of TetraOrigin::saveAsSummaryITO. It takes a number of arguments, such as `folder`, which is the folder containing the output of TetraOrigin. For example, if we wanted to import IBDs from the folder "TetraOrigin" for a species with 5 linkage groups, we would run the following:
 
@@ -222,7 +230,9 @@ Here, there are unrealistically-high numbers of recombinations predicted, sugges
 <a name="sect5"></a>
 
 ## Genotypic Information
-Another approach to assessing the quality of the IBD probabilities, as well as understanding the "QTL detection landscape" to some degree is to estimate the **G**enotypic **I**nformation **C**oefficient (GIC). The GIC is calculated per homologue across the whole population, and ranges from 0 (no information) to 1 (full information). To maximise QTL detection power and precision, we would like the GIC to be uniform and as high as possible [@Bourke2019]. Note that the GIC is only defined if we set the `bivalent_decoding` option to be `TRUE` in the estimation of IBD probabilities. We calculate the GIC as follows:
+Another approach to assessing the quality of the IBD probabilities, as well as understanding the "QTL detection landscape" to some degree is to estimate the **G**enotypic **I**nformation **C**oefficient (GIC). The GIC is calculated per homologue across the whole population, and ranges from 0 (no information) to 1 (full information). To maximise QTL detection power and precision, we would like the GIC to be uniform and as high as possible [@Bourke2019]. Note that the GIC is only defined for bivalent pairing, and therefore estimates of GIC from a multivalent-aware HMM are based on offspring predicted to have come from a bivalent-based meiosis for that linkage group (this tends to be most of the population anyway). 
+
+We calculate the GIC as follows:
 
 ```{r echo = FALSE}
 data("IBD_4x")
@@ -306,7 +316,7 @@ plotLinearQTL(LOD_data = qtl_LODs.4x,
 A variant of this function is the `plotLinearQTL_list` function, which is specifically designed to visualise the results of a number of analysis together. This can also be done using either of the two functions already mentioned, but in the case of the _list version, the superimposed plots are re-scaled so that threshold lines overlap. This is covered in more detail in the section on [co-factors](#overlaycofactorplot).
 
 ### Significance thresholds
-Although it already appears like we have an interesting peak on LG1, we are not sure whether this region is truly associated with our trait or not. One method of establishing whether the association is significant is to run a permutation test. Currently the package has two options. The first uses the full structure of your data as provided. However, it is much faster to run a permutation test when your data has a simple structure, with no experimental blocks or no genetic co-factors. To deal with experimental blocks, you should estimate [BLUEs](#blue) first before running the permutation test. For genetic co-factors, you can first run an analysis with the co-factor(s) included, and then use the residuals as your phenotype. However, it is also possible (but not recommended) to simply run a permutation test without these steps, using the `QTLscan` function as follows:
+Although it already appears like we have an interesting peak on LG 1, we are not sure whether this region is truly associated with our trait or not. One method of establishing whether the association is significant is to run a permutation test. Currently the package has two options. The first uses the full structure of your data as provided. However, it is much faster to run a permutation test when your data has a simple structure, with no experimental blocks or no genetic co-factors. To deal with experimental blocks, you should estimate [BLUEs](#blue) first before running the permutation test. For genetic co-factors, you can first run an analysis with the co-factor(s) included, and then use the residuals as your phenotype. However, it is also possible (but not recommended) to simply run a permutation test without these steps, using the `QTLscan` function as follows:
 
 ```{r eval = FALSE}
 qtl_LODs.4x <- QTLscan(IBD_list = IBD_4x,
@@ -366,7 +376,7 @@ plotLinearQTL(LOD_data = qtl_LODs.4x,
               col = "dodgerblue")
 ```
 
-Note that the LOD scores have now increased, but the significance threshold has also increased. This has to do with how the LOD score is estimated, using a ratio of the RSS from your fitted model at a putative QTL position with that of the NULL model with no QTL. In the case of blocks, the NULL model already contains your blocking term, and so a portion of the phenotypic variance is already accounted for when calculating the LOD score. When using BLUEs as your phenotype, you first correct your phenotypes for block effects, but the NULL model now has no explanatory variables, which artificially inflates your LODs. However, a permutation test will accounts for these sorts of discrepancies, and the region of the genome that lies above the threshold should be the same. 
+Note that the LOD scores have now increased, but the significance threshold has also increased. This has to do with how the LOD score is estimated, using a ratio of the RSS from your fitted model at a putative QTL position with that of the NULL model with no QTL. In the case of blocks, the NULL model already contains your blocking term, and so a portion of the phenotypic variance is already accounted for when calculating the LOD score. When using BLUEs as your phenotype, you first correct your phenotypes for block effects, but the NULL model now has no explanatory variables, which artificially inflates your LODs. However, a permutation test will account for these sorts of discrepancies, and the region of the genome that lies above the threshold should be the same. 
 
 ### Adding genetic co-factors
 In many situations we may wish to include already-identified QTL positions as fixed genetic effects in a QTL search. This can help to reduce the amount of unwanted background variance in the phenotypic data which can lead to greater power to detect QTL at other positions. Another possible reason could be to test whether multiple peaks on a single linkage group are independent. We can run a co-factor analysis using `QTLscan`  by specifying the `cofactor_df` argument. To this we supply a data-frame with three columns, namely "LG", "type", and "ID" (although column identifiers are not mandatory). 
@@ -374,7 +384,7 @@ In many situations we may wish to include already-identified QTL positions as fi
 Before we add the QTL peak as a co-factor, we need to know where it is. We know it is on LG1, and has a LOD value above 12 (here, using the BLUEs results). We search for the peak as follows:
 
 ```{r}
-qtl_LODs.4x$QTL.res[qtl_LODs.4x$QTL.res$chromosome == 1 & qtl_LODs.4x$QTL.res$LOD > 12,]
+findPeak(qtl_LODs.4x, linkage_group = 1)
 ```
 
 The peak position is therefore at 12.3 cM. We include this as a co-factor as follows:
@@ -399,6 +409,7 @@ qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cofactor.RDS")
 
 ```{r}
 new_pheno <- qtl_LODs.4x_cofactor$Residuals
+head(new_pheno)
 colnames(new_pheno)
 ```
 
@@ -593,7 +604,7 @@ We have by now identified the major QTL affecting our trait, and both explored a
 
 ### Meiosis report
 
-It is interesting to look at what went on in parental meiosis in the population, as it may give an indication on *e.g.* the pairing behaviour of chromosomes during meiosis. For many polyploid crops this is not necessarily a well-understood process, so we provide som tools to help give insights into whether your species of interest is autopolyploid, allopolyploid or something in between ("segmental allopolyploid"). 
+It is interesting to look at what went on in parental meiosis in the population, as it may give an indication on *e.g.* the pairing behaviour of chromosomes during meiosis. For many polyploid crops this is not necessarily a well-understood process, so we provide some tools to help give insights into whether your species of interest is autopolyploid, allopolyploid or something in between ("segmental allopolyploid"). 
 
 To this end, we run the function `meiosis_report` as follows:
 
@@ -609,7 +620,24 @@ knitr::include_graphics("figures/mr1.png")
 knitr::include_graphics("figures/mr2.png")
 ```
 
-Apart from visualising the deviations (in counts) from a purely random bivalent pairing model, the function also analyses all predicted bivalent pairings and performs an uncorrected $\chi^2$ test to detect deviations from a polyomic model. If multivalents were also included during IBD estimation these are also counted and recorded, but do not contribute to the $\chi^2$ test or output plots. Note that the colour of the output plot conveys information about the results of the $\chi^2$ test: green signifying no strong deviation from a polysomic model, while red colours indicating a more severe deviation from a polysomic model. In this example, there is no suggestion of anything but polysomic inheritance, associated with autopolyploidy.
+### Preferential pairing
+Apart from visualising the deviations (in counts) from a purely random bivalent pairing model, the function `meiosis_report` also analyses all predicted bivalent pairings and performs an uncorrected $\chi^2$ test to detect deviations from a polyomic model. If multivalents were also included during IBD estimation these are also counted and recorded, but do not contribute to the $\chi^2$ test or output plots. Note that the colour of the output plot conveys information about the results of the $\chi^2$ test: green signifying no strong deviation from a polysomic model, while red colours indicating a more severe deviation from a polysomic model. In this example, there is no suggestion of anything but polysomic inheritance, associated with autopolyploidy.
+
+An alternative approach to visualise the pairing behaviour of parental homologues is provided by the function `visualisePairing`. This function displays deviations from random expectations as before, but using line thickness to represent the magnitude of the deviation (by default, an excess of pairing counts is coloured red and a lack of counts coloured blue). One argument needed in order for the function to work is `datawidemax`, which is the data-wide maximum deviation. This is then given the line width as specified by `max.lwd`, and all other deviations are scaled accordingly. See `?visualisePairing` for more details.
+
+The function can be run using the output of `meiosis_report` as follows:
+
+```{r echo = FALSE}
+mr <- readRDS("mr.RDS")
+```
+
+```{r}
+par(mfrow = c(1,2))
+visualisePairing(meiosis_report.ls = mr,
+                 parent = "P1",
+                 datawidemax = 5)
+```
+
 
 ### Recombination landscape
 It can be very informative to perform an analysis of all the predicted recombinations (from cross-over events), as these can indicate issues such as poor map order, problematic individuals (carrying too many predicted recombinations) or errors in marker phase. The position of these can also be biologically relevant, indicating recombination hot-spots or cold-spots. They also provide a means to correct genotyping errors, if we take the view that genotyping errors are a more likely cause of multiple recombination events in an individual rather than cross-overs (which they usually are). In short, an analysis of the recombination landscape offers a lot of scope for improved understanding on many levels.
@@ -733,9 +761,9 @@ If all went well, these offspring should all possess the homologue 1 allele in t
 
 One final topic that is useful to include here is that of error correction in our marker genotypes. Particularly when using some next-generation sequencing based methods for genotyping, errors in the data can become quite a problem. One of the many applications of IBD probabilities (and their method of estimation) is to try to determine what the offspring in a population actually inherited in terms of their parental alleles. In the Hidden Markov Model introduced [earlier](#hmm), we did not discuss choice of prior for genotyping errors. The function uses a default prior of 0.01. What this means in practice is that we put a very high weight on our genotype observations: with such a prior in a tetraploid, the probability that an offspring score of '1' is in fact a true '1' is 0.99, while the probability of it being 0, 2, 3 or 4 is 0.01 (and therefore the probability of its true state being 0 is only 0.01/4 *i.e.* only 0.25 %). This is clearly a very strong prior on our observed genotype values and can lead to many erroneous recombinations being predicted.
 
-A very simple solution to this issue when there seems to be evidence of many genotyping errors (see previous [haplotype plot](#hp) for an example) is to increase the error prior when estimating the IBD probabilities, to effectively suppress incorrect prediction of double recombination events. If time allows, you can play around here with various error prior probabilities, and look at their effect on the overall recombination counts that were predicted, as explored in the previous section. But generally, a prior of 0.5 or higher is recommended for this purpose. Remember, an error prior of 0.8 in a tetraploid means we actually consider all possible dosage scores as equally likely (with a probability of 0.2). Setting an error prior at this level is also rather extreme.  
+A very simple solution to this issue when there seems to be evidence of many genotyping errors (see previous [haplotype plot](#hp) for an example) is to increase the error prior when estimating the IBD probabilities, to effectively suppress incorrect prediction of double recombination events. You can experiment with various error prior probabilities (argument `e` in `estimate_IBD`), and look at their effect on both the overall recombination counts, and the marginal likelihoods per individual (another one of the outputs of the `estimate_IBD` function). In general, a prior of 0.1 or even 0.2 will suppress spurious recombinations from being predicted, but make sure to check that this doesn't decrease the likelihood from that at a lower genotype error estimate. Note that an error prior of 0.8 in a tetraploid means we actually consider all possible dosage scores as equally likely (with a probability of 0.2). However, setting an error prior at this level means that you consider your data to be random noise.  
 
-Once you are happy with the results (again, using the visualisation tools described earlier) you have one further possibility open to you: to re-impute your marker genotypes given these "smoothed" IBD probabilities. This can be achieved using the function `impute_dosages`. But first we need to introduce some genotyping errors, and then re-estimate the IBDs using a higher error prior:
+Once you are happy with the results (again, using the visualisation tools described earlier) you have one further possibility open to you: to re-impute your marker genotypes given these "smoothed" IBD probabilities. This can be achieved using the function `impute_dosages`. To demonstrate this here, we will artificially introduce some genotyping errors (something you normally would *not* do), and then re-estimate the IBDs using a higher error prior:
 
 ```{r}
 # Copy our dosage matrix to a new matrix:
@@ -747,17 +775,17 @@ F1cols <- 3:ncol(error_dosages)
 # Count number of (offspring) dosage scores:
 ndose <- length(error_dosages[,F1cols])
 
-# Generate a vector of random scores, 10% of data size:
-errors <- sample(0:4,round(ndose*0.1),replace = TRUE)
+# Generate a vector of random positions (10% of total nr):
+error.pos <- sample(1:ndose,round(ndose*0.1))
 
 # Replace real values with these random scores (simple error simulation):
-error_dosages[,F1cols][sample(1:ndose,length(errors))] <- errors
+error_dosages[,F1cols][error.pos] <- sapply(error_dosages[,F1cols][error.pos], function(x) sample(setdiff(0:4,x),1))
 
 # Re-estimate IBD probabilities, using a high error prior of 0.3:
 IBD_4x.err <- estimate_IBD(phased_maplist = phased_maplist.4x,
                            genotypes = error_dosages,
                            ploidy = 4,
-                           error = 0.3,
+                           error = 0.3, 
                            ncores = nc)
 # Re-impute marker dosages
 new_dosages <- impute_dosages(IBD_list=IBD_4x.err,dosage_matrix=error_dosages,
@@ -770,10 +798,10 @@ round(length(which(error_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2
 round(length(which(new_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
 ```
 
-So having had 8% genotyping errors to begin with (we didn't quite manage 10% as some of the replaced scores were the same as the original ones by chance!) we have reduced the error rate in the data to 1%, but also introduced 2.4% missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in QTL detection (even just using IBD probabilities estimated with a high error prior when the visualised haplotypes seem problematic).
+So having had 10% genotyping errors to begin with, we have reduced the error rate in the data to 1%, but also introduced about 2-3% missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in QTL detection (in fact, just using IBD probabilities estimated with an appropriate error prior when the visualised haplotypes seem problematic).
 
 ## Concluding remarks
-We hope you have been able to successfully run a QTL analysis using your data and the methods described here. The package may still be further improved and developed, and feedback on performance, suggestions for improvements / extensions and bug reporting is most welcome; please contact the developer Peter Bourke (peter.bourke _at_ wur.nl).
+We hope you have been able to successfully run a QTL analysis and explore polyploid meiotic dynamics using your data and the methods described here. The package may still be further improved and developed, and feedback on performance, suggestions for improvements / extensions and bug reporting is most welcome; please contact the developer Peter Bourke (peter.bourke _at_ wur.nl).
 
 <a name="sect10"></a>
 

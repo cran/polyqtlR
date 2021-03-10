@@ -4,7 +4,7 @@
 \alias{state_fun}
 \title{Function to return the list of possible pairing states, given parental ploidies and meiotic pairing model}
 \usage{
-state_fun(ploidy, ploidy2, bivalent_decoding)
+state_fun(ploidy, ploidy2, bivalent_decoding, full_multivalent_hexa = FALSE)
 }
 \arguments{
 \item{ploidy}{Ploidy of parent 1}
@@ -12,6 +12,8 @@ state_fun(ploidy, ploidy2, bivalent_decoding)
 \item{ploidy2}{Ploidy of parent 2}
 
 \item{bivalent_decoding}{Logical, if \code{FALSE} then multivalent pairing assumed}
+
+\item{full_multivalent_hexa}{Should multivalent pairing be considered in both parents simultaneously in hexaploids?}
 }
 \description{
 Function to return the list of possible pairing states, given parental ploidies and meiotic pairing model

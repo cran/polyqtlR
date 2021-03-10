@@ -4,7 +4,7 @@
 \alias{meiosis_report}
 \title{Generate a 'report' of predicted meiotic behaviour in an F1 population}
 \usage{
-meiosis_report(IBD_list, visualise = TRUE)
+meiosis_report(IBD_list, visualise = TRUE, precision = 2)
 }
 \arguments{
 \item{IBD_list}{List of IBD probabilities as estimated by \code{\link{estimate_IBD}} using method 'hmm', or externally (e.g. using TetraOrigin)}
@@ -13,6 +13,8 @@ meiosis_report(IBD_list, visualise = TRUE)
 flag extreme deviations from the expected numbers (associated with polysomic inheritance, considered the Null hypothesis),
 barplots are coloured according to the level of significance of the X2 test. Plots showing red bars indicate extreme deviations from
 a polysomic pattern.}
+
+\item{precision}{To how many decimal places should summed probabilities per bivalent pairing be rounded? By default 2.}
 }
 \value{
 The function returns a nested list, with one element per linkage group in the same order as the input IBD list.
@@ -27,6 +29,8 @@ to the count of individuals with A and B pairing (and hence C and D pairing). In
 configuration in the remaining homologues. In this case, row A and column B is the count of individuals where A and B were predicted to have paired,
 summed over all three bivalent configurations with A and B paired (AB-CD-EF, AB-CE-DF, AB-CF,DE).}
 \item{P2_pairing:  Same as P1_pairing, except using parent 2}
+\item{ploidy:  The ploidy of parent 1}
+\item{ploidy2:  The ploidy of parent 2}
 }
 }
 \description{
@@ -36,5 +40,5 @@ the function also applies a simple chi-squared test to look for evidence of non-
 }
 \examples{
 data("IBD_4x")
-meiosis_report(IBD_list = IBD_4x)
+mr.ls<-meiosis_report(IBD_list = IBD_4x)
 }

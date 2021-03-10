@@ -30,6 +30,9 @@ Returns a list with the following items:
 \item{IBDarray : }{An array of IBD probabilities. The dimensions of the array are: markers, genotype classes and individuals.}
 \item{map : }{Integrated linkage map positions of markers used in IBD calculation}
 \item{parental_phase : }{The parental marker phasing as used by TetraOrigin, recoded in 1 and 0's}
+\item{marginal.likelihoods : }{A list of marginal likelihoods of different valencies, currently \code{NULL}}
+\item{valency : }{The predicted valency that maximised the marginal likelihood, per offspring. Currently \code{NULL}}
+\item{offspring : }{Offspring names}
 \item{biv_dec : }{Logical, the bivalent_decoding parameter specified.}
 \item{gap : }{The gap size used in IBD interpolation, by default \code{NULL}. See \code{\link{spline_IBD}}}
 \item{genocodes : }{Ordered list of genotype codes used to represent different genotype classes.}

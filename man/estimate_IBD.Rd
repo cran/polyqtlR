@@ -19,6 +19,7 @@ estimate_IBD(
   map_function = "haldane",
   bivalent_decoding = TRUE,
   error = 0.01,
+  full_multivalent_hexa = FALSE,
   verbose = FALSE,
   ncores = 1,
   fix_threshold = 0.1,
@@ -88,6 +89,9 @@ Currently only \code{"haldane"} or \code{"kosambi"} are allowed.}
 
 \item{error}{The (prior) probability of errors in the offspring dosages, usually assumed to be small but non-zero}
 
+\item{full_multivalent_hexa}{Option to allow multivalent pairing in both parents at the hexaploid level, by default \code{FALSE}. Note that if \code{TRUE},
+a very large available RAM may be required (>= 32Gb) to process the data.}
+
 \item{verbose}{Logical, by default \code{TRUE}. Should progress messages be written?}
 
 \item{ncores}{How many CPU cores should be used in the evaluation? By default 1 core is used.}
@@ -104,6 +108,9 @@ list item is itself a list containing the following:
 \item{IBDarray: A 3d array of IBD probabilities, with dimensions marker, genotype-class and F1 individual.}
 \item{map: A 3-column data-frame specifying chromosome, marker and position (in cM)}
 \item{parental_phase: Phasing of the markers in the parents, as given in the input \code{phased_maplist}}
+\item{marginal.likelihoods: A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise \code{NULL}}
+\item{valency: The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", \code{NULL}}
+\item{offspring: Offspring names}
 \item{biv_dec: Logical, whether bivalent decoding was used in the estimation of the F1 IBD probabilities.}
 \item{gap: The size of the gap (in cM) used when interpolating the IBD probabilities. See function \code{\link{spline_IBD}} for details.}
 \item{genocodes: Ordered list of genotype codes used to represent different genotype classes.}

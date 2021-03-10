@@ -43,6 +43,9 @@
 #' A list of hexaploid bivalent pairing configurations
 "hexa.list"
 
+#' A list of pairing predictions (4x)
+"mr.ls"
+
 #' Rcpp internal function Forward from forward-backward algorithm
 "fx"
 

@@ -63,7 +63,7 @@ Use \code{parallel::detectCores()} to find out how many cores you have available
 \value{
 A nested list; each list element (per linkage group) contains the following items:
 \itemize{
-\item{QTL.res : }{Single matrix of QTL results with columns chromosome, position, LOD and expl.var (rate of variance explained at each position).}
+\item{QTL.res : }{Single matrix of QTL results with columns chromosome, position, LOD, adj.r.squared and PVE (percentage variance explained).}
 \item{Perm.res : }{If \code{perm_test} = \code{FALSE}, this will be \code{NULL}.
 Otherwise, Perm.res contains a list of the results of the permutation test, with list items
 "quantile","threshold" and "scores". Quantile refers to which quantile of scores was used to determine the threshold.

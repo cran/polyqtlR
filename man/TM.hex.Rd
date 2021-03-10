@@ -9,7 +9,7 @@ TM.hex(m1, r_vect, rem_hex = rem.hex)
 \arguments{
 \item{m1}{marker}
 
-\item{r_vect}{Vector of adjacent recombiantion frequencies}
+\item{r_vect}{Vector of adjacent recombination frequencies}
 
 \item{rem_hex}{Index of genotype classes to remove, work-around from overly-general transition matrix with redundant classes}
 }

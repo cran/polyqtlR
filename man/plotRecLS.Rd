@@ -4,10 +4,20 @@
 \alias{plotRecLS}
 \title{Plot the recombination landscape across the genome}
 \usage{
-plotRecLS(recombination_data, gap = 1, ...)
+plotRecLS(
+  recombination_data,
+  plot_per_LG = TRUE,
+  plot_per_ind = TRUE,
+  gap = 1,
+  ...
+)
 }
 \arguments{
 \item{recombination_data}{Data on predicted recombination events, as returned by the function \code{\link{count_recombinations}}}
+
+\item{plot_per_LG}{Logical argument, plot recombination events per linkage group? By default \code{TRUE}.}
+
+\item{plot_per_ind}{Logical argument, plot recombination events per individual? By default \code{TRUE}.}
 
 \item{gap}{The size (in cM) of the gap used to define the grid of positions to define the window in which to estimate 
 recombination rate. By default 1 cM. Interpolated positions are taken to be the centre of an interval, so a 1 cM gap would

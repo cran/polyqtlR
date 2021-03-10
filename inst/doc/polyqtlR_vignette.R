@@ -142,7 +142,7 @@ plotLinearQTL(LOD_data = qtl_LODs.4x,
               col = "dodgerblue")
 
 ## -----------------------------------------------------------------------------
-qtl_LODs.4x$QTL.res[qtl_LODs.4x$QTL.res$chromosome == 1 & qtl_LODs.4x$QTL.res$LOD > 12,]
+findPeak(qtl_LODs.4x, linkage_group = 1)
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  qtl_LODs.4x_cofactor <- QTLscan(IBD_list = IBD_4x,
@@ -161,6 +161,7 @@ qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cofactor.RDS")
 
 ## -----------------------------------------------------------------------------
 new_pheno <- qtl_LODs.4x_cofactor$Residuals
+head(new_pheno)
 colnames(new_pheno)
 
 ## -----------------------------------------------------------------------------
@@ -276,6 +277,15 @@ knitr::include_graphics("figures/mr1.png")
 ## ---- out.width = "500px", echo = FALSE---------------------------------------
 knitr::include_graphics("figures/mr2.png")
 
+## ----echo = FALSE-------------------------------------------------------------
+mr <- readRDS("mr.RDS")
+
+## -----------------------------------------------------------------------------
+par(mfrow = c(1,2))
+visualisePairing(meiosis_report.ls = mr,
+                 parent = "P1",
+                 datawidemax = 5)
+
 ## -----------------------------------------------------------------------------
 recom.ls <- count_recombinations(IBD_4x)
 
@@ -343,17 +353,17 @@ F1cols <- 3:ncol(error_dosages)
 # Count number of (offspring) dosage scores:
 ndose <- length(error_dosages[,F1cols])
 
-# Generate a vector of random scores, 10% of data size:
-errors <- sample(0:4,round(ndose*0.1),replace = TRUE)
+# Generate a vector of random positions (10% of total nr):
+error.pos <- sample(1:ndose,round(ndose*0.1))
 
 # Replace real values with these random scores (simple error simulation):
-error_dosages[,F1cols][sample(1:ndose,length(errors))] <- errors
+error_dosages[,F1cols][error.pos] <- sapply(error_dosages[,F1cols][error.pos], function(x) sample(setdiff(0:4,x),1))
 
 # Re-estimate IBD probabilities, using a high error prior of 0.3:
 IBD_4x.err <- estimate_IBD(phased_maplist = phased_maplist.4x,
                            genotypes = error_dosages,
                            ploidy = 4,
-                           error = 0.3,
+                           error = 0.3, 
                            ncores = nc)
 # Re-impute marker dosages
 new_dosages <- impute_dosages(IBD_list=IBD_4x.err,dosage_matrix=error_dosages,

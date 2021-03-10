@@ -44,7 +44,8 @@ BLUE <- function(data,
 #' @description The function \code{count_recombinations} returns a list of all predicted recombination breakpoints. The output can be passed 
 #' using the argument \code{recombination_data} to the function \code{\link{visualiseHaplo}}, where the predicted breakpoints overlay the haplotypes. 
 #' Alternatively, a genome-wide visualisation of the recombination landscape both per linkage group and per individual can be generated using the function \code{\link{plotRecLS}}, 
-#' which can be useful in identifying problematic areas of the linkage maps, or problematic individuals in the population.
+#' which can be useful in identifying problematic areas of the linkage maps, or problematic individuals in the population. Currently, recombination break-points
+#' are only estimated from bivalents in meiosis; any offspring resulting from a predicted multivalent is excluded from the analysis and will be returned with a \code{NA} value.
 #' @param IBD_list List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}), assuming bivalent pairing.
 #' @param plausible_pairing_prob The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
 #' The default setting of 0.4 is rather low - but accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.
@@ -70,8 +71,7 @@ count_recombinations <- function(IBD_list,
   IBDtype <- IBD_list[[1]]$IBDtype
   bivalent_decoding <- IBD_list[[1]]$biv_dec
   
-  ## For now this should be in a bivalents-only context
-  if(!bivalent_decoding) stop("Currently only bivalents considered!\nPlease re-estimate IBD probabilities with bivalent_decoding = TRUE.")
+  if(!bivalent_decoding) warning("Currently recombinations are predicted from bivalents only.")
   
   gap <- IBD_list[[1]]$gap
   
@@ -81,10 +81,6 @@ count_recombinations <- function(IBD_list,
   if(IBDtype == "genotypeIBD"){
     if(IBD_list[[1]]$method == "hmm_TO"){
       ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      
       GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
       Nstates <- nrow(GenCodes)
       indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
@@ -114,11 +110,18 @@ count_recombinations <- function(IBD_list,
     stop("Unable to determine IBD type, please check IBD_list elements have a valid $IBDtype tag.")
   }
   
-  out.ls <- setNames(lapply(seq(length(IBD_list)), function(ch = 1){
+  out.ls <- setNames(lapply(seq(length(IBD_list)), function(ch){
+    nind <- dim(IBD_list[[ch]]$IBDarray)[3]
+    
+    if(!bivalent_decoding){
+      ML <- IBD_list[[ch]]$marginal.likelihood
+      f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
+      if(length(which(f1ok)) == 0) stop(paste("Cannot proceed on LG",ch,"- no offspring predicted from bivalent-only meioses!"))
+    } else{
+      f1ok <- rep(TRUE,nind)
+    }
     
     pair.ls <- IBD_list[[ch]]$pairing
-    
-    nind <- length(IBD_list[[ch]]$pairing)
     
     if(is.null(gap)){
       cMpositions <- IBD_list[[ch]]$map$position
@@ -128,39 +131,46 @@ count_recombinations <- function(IBD_list,
     }
     
     F1_recombinants <- lapply(1:nind, function(f1 = 1){
-      ## Need to weight by the probabilities of the pairing; choose only plausible pairings:
-      plausible <- pair.ls[[f1]][pair.ls[[f1]] >= plausible_pairing_prob]
-      
-      ## Generate haplotype probabilities
-      haploprobs <- IBD_list[[ch]]$IBDarray[,,f1] %*% indicatorMatrix
-      colnames(haploprobs) <- LETTERS[1:ncol(haploprobs)]
-      
-      f1.recoms <- setNames(lapply(names(plausible), function(pair = names(plausible)) {
-        prob.pair <- strsplit(pair,"-")[[1]]
+   
+      if(f1 %in% which(f1ok)){
+        ## Need to weight by the probabilities of the pairing; choose only plausible pairings:
+        plausible <- pair.ls[[f1]][pair.ls[[f1]] >= plausible_pairing_prob]
+         
+        ## Generate haplotype probabilities
+        haploprobs <- IBD_list[[ch]]$IBDarray[,,f1] %*% indicatorMatrix
+        colnames(haploprobs) <- LETTERS[1:ncol(haploprobs)]
         
-        recoms <- setNames(lapply(prob.pair, function(valent = prob.pair[2]){
-          val.homs <- strsplit(valent,"")[[1]]
+        f1.recoms <- setNames(lapply(names(plausible), function(pair = names(plausible)) {
+          prob.pair <- strsplit(pair,"-")[[1]]
           
-          ## For now this should be in a bivalents-context
-          if(length(val.homs) != 2) stop("Currently only bivalents considered!")
-          round(haploprobs[,3:4],2)
-          v1pred <- haploprobs[,val.homs[1]] > haploprobs[,val.homs[2]] #assumes only 2 columns
-          
-          rec.vec <- v1pred[-length(v1pred)] != v1pred[-1]
-          rec.pos <- rowMeans(cbind(cMpositions[which(rec.vec)],
-                                    cMpositions[which(rec.vec) + 1]))
-          if(length(rec.pos) == 0) rec.pos <- NA
-          
-          return(rec.pos)
-        }),prob.pair)
+          recoms <- setNames(lapply(prob.pair, function(valent = prob.pair[2]){
+            val.homs <- strsplit(valent,"")[[1]]
+            
+            ## For now this should be in a bivalents-context
+            if(length(val.homs) != 2) stop("Currently only bivalents considered!")
+            # round(haploprobs[,3:4],2)
+            v1pred <- haploprobs[,val.homs[1]] > haploprobs[,val.homs[2]] #assumes only 2 columns
+            
+            rec.vec <- v1pred[-length(v1pred)] != v1pred[-1]
+            rec.pos <- rowMeans(cbind(cMpositions[which(rec.vec)],
+                                      cMpositions[which(rec.vec) + 1]))
+            if(length(rec.pos) == 0) rec.pos <- NA
+            
+            return(rec.pos)
+          }),prob.pair)
         
         return(list("Valent_probability" = round(plausible[[pair]],3),
                     "recombination_breakpoints" = recoms))
         
       }),names(plausible))
-      if(length(f1.recoms) == 0) f1.recoms <- NA
-      return(f1.recoms)
       
+        if(length(f1.recoms) == 0) f1.recoms <- NA
+        
+      } else{
+        f1.recoms <- NA
+      }
+        
+      return(f1.recoms)
     })
     
     return(list("recombinations" = setNames(F1_recombinants, dimnames(IBD_list[[ch]]$IBDarray)[[3]]),
@@ -170,9 +180,6 @@ count_recombinations <- function(IBD_list,
   
   return(out.ls)
 } #count_recombinations
-
-
-
 
 
 #' Function to extract the phased map from a mappoly.map object
@@ -258,7 +265,8 @@ estimate_GIC <- function(IBD_list){
   
   if(IBDtype == "genotypeIBD"){
     
-    if(!bivalent_decoding) stop("Cannot estimate the GIC if bivalent_decoding = FALSE!")
+    if(!bivalent_decoding) warning("Cannot estimate the GIC from multivalent-derived offspring due to possible double reduction.
+                                   \nScreening out such individuals and proceeding...")
     
     if(IBD_list[[1]]$method == "hmm_TO"){
       ## We are using the output of TetraOrigin
@@ -304,14 +312,25 @@ estimate_GIC <- function(IBD_list){
     
     if(IBDtype == "genotypeIBD"){
       
-      IBDhaps <- array(NA, dim=c(dim(IBDarray)[1], dim(indicatorMatrix)[2], dim(IBDarray)[3]))
-      IBDhaps[] <- apply(IBDarray,3,function(x) x %*% indicatorMatrix)
+      if(!bivalent_decoding){
+        ML <- IBD_list[[l]]$marginal.likelihood
+        f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
+        nf1 <- length(which(f1ok))
+        if(nf1 == 0) stop(paste("Cannot proceed on LG",l,"- no offspring predicted from bivalent-only meioses!"))
+      } else{
+        nf1 <- popSize
+        f1ok <- rep(TRUE,nf1)
+      }
       
-      dimnames(IBDhaps)[c(1,3)] <- dimnames(IBDarray)[c(1,3)]
+      IBDhaps <- array(NA, dim=c(dim(IBDarray)[1], dim(indicatorMatrix)[2], nf1))
+      IBDhaps[] <- apply(IBDarray[,,f1ok],3,function(x) x %*% indicatorMatrix)
+      
+      dimnames(IBDhaps)[[1]] <- dimnames(IBDarray)[[1]]
       dimnames(IBDhaps)[[2]] <- paste0("h", 1:(ploidy + ploidy2))
+      dimnames(IBDhaps)[[3]] <- dimnames(IBDarray)[[3]][f1ok]
       
       GICs <- do.call(rbind, lapply(1:dim(IBDhaps)[1], function(p) {
-        apply(IBDhaps[p,,], 1, function(x) 1 - 4*sum(x*(1-x))/popSize)
+        apply(IBDhaps[p,,], 1, function(x) 1 - 4*sum(x*(1-x))/nf1)
       }))
       
     } else{
@@ -399,6 +418,8 @@ estimate_GIC <- function(IBD_list){
 #' Currently only \code{"haldane"} or \code{"kosambi"} are allowed.
 #' @param bivalent_decoding Option to consider only bivalent pairing during formation of gametes (ignored for diploid populations, as only bivalents possible there), by default \code{TRUE}
 #' @param error The (prior) probability of errors in the offspring dosages, usually assumed to be small but non-zero
+#' @param full_multivalent_hexa Option to allow multivalent pairing in both parents at the hexaploid level, by default \code{FALSE}. Note that if \code{TRUE},
+#' a very large available RAM may be required (>= 32Gb) to process the data. 
 #' @param verbose Logical, by default \code{TRUE}. Should progress messages be written?
 #' @param ncores How many CPU cores should be used in the evaluation? By default 1 core is used.
 #' @param fix_threshold If \code{method = "heur"}, the threshold to fix the IBD probabilities while correcting for the sum of probabilities.
@@ -410,6 +431,9 @@ estimate_GIC <- function(IBD_list){
 #' \item{IBDarray: A 3d array of IBD probabilities, with dimensions marker, genotype-class and F1 individual.}
 #' \item{map: A 3-column data-frame specifying chromosome, marker and position (in cM)}
 #' \item{parental_phase: Phasing of the markers in the parents, as given in the input \code{phased_maplist}}
+#' \item{marginal.likelihoods: A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise \code{NULL}}
+#' \item{valency: The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", \code{NULL}}
+#' \item{offspring: Offspring names}
 #' \item{biv_dec: Logical, whether bivalent decoding was used in the estimation of the F1 IBD probabilities.}
 #' \item{gap: The size of the gap (in cM) used when interpolating the IBD probabilities. See function \code{\link{spline_IBD}} for details.}
 #' \item{genocodes: Ordered list of genotype codes used to represent different genotype classes.}
@@ -444,6 +468,7 @@ estimate_IBD <- function(input_type = "discrete",
                          map_function = "haldane",
                          bivalent_decoding = TRUE,
                          error = 0.01,
+                         full_multivalent_hexa = FALSE,
                          verbose = FALSE,
                          ncores = 1,
                          fix_threshold = 0.1,
@@ -465,6 +490,7 @@ estimate_IBD <- function(input_type = "discrete",
                    map_function = map_function,
                    bivalent_decoding = bivalent_decoding,
                    error = error,
+                   full_multivalent_hexa = full_multivalent_hexa,
                    verbose = verbose,
                    ncores = ncores)
   } else{
@@ -883,6 +909,62 @@ exploreQTL <- function(IBD_list,
               "Allele.effects" = outList))
 } #exploreQTL
 
+#' Function to find the position of maximum LOD on a particular linkage group
+#' @description Given QTL output, this function returns the position of maximum LOD for a specified linkage group.
+#' @param LOD_data Output of \code{\link{QTLscan}} function.
+#' @param linkage_group Numeric identifier of the linkage group being tested, based on the order of \code{IBD_list}.
+#' Only a single linkage group is allowed.
+#' @param verbose Should messages be written to standard output? By default \code{TRUE}.
+#' @examples 
+#' data("qtl_LODs.4x")
+#' findPeak(LOD_data=qtl_LODs.4x,linkage_group=1)
+#' @export
+findPeak <- function(LOD_data,
+                     linkage_group,
+                     verbose = TRUE){
+  if(is.null(LOD_data$Perm.res)){
+    warning("No significance threshold available to check")
+    thresh <- 0
+  } else{
+    thresh <- LOD_data$Perm.res$threshold
+  }
+  
+  lgdata <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == linkage_group,]
+  maxdata <- lgdata[which.max(lgdata$LOD),]
+  
+  if(maxdata$LOD < thresh) warning(paste("Peak on LG",linkage_group,
+                                         "does not exceed the significance threshold"))
+  
+  if(verbose) print(cbind(maxdata,thresh = thresh))
+  
+  return(maxdata$position)
+} #findPeak
+
+
+#' Function to find a LOD - x support interval around a QTL position
+#' @description Given QTL output, this function returns the LOD - x support for a specified linkage group, taking the 
+#' maximum LOD position as the desired QTL peak.
+#' @param LOD_data Output of \code{\link{QTLscan}} function.
+#' @param linkage_group Numeric identifier of the linkage group being tested, based on the order of \code{IBD_list}.
+#' Only a single linkage group is allowed.
+#' @param LOD_support The level of support around a QTL peak, by default 2 (giving a LOD - 2 support interval, the 
+#' range of positions with a LOD score within 2 LOD units of the maximum LOD on that linkage group). 
+#' @examples 
+#' data("qtl_LODs.4x")
+#' findSupport(LOD_data=qtl_LODs.4x,linkage_group=1)
+#' @export
+findSupport <- function(LOD_data,
+                        linkage_group,
+                        LOD_support = 2){
+  
+  if(!LOD_support > 0) stop("LOD_support should be a positive number!")
+  
+  lgdata <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == linkage_group,]
+  LODrange <- lgdata$LOD >= max(lgdata$LOD) - LOD_support
+  
+  return(range(lgdata$position[LODrange]))
+} #findSupport
+
 
 #' Import IBD probabilities as estimated by TetraOrigin
 #' @description Imports the summarised IBD probability output of TetraOrigin (which estimates IBD probabilities at all
@@ -898,6 +980,9 @@ exploreQTL <- function(IBD_list,
 #' \item{IBDarray : }{An array of IBD probabilities. The dimensions of the array are: markers, genotype classes and individuals.}
 #' \item{map : }{Integrated linkage map positions of markers used in IBD calculation}
 #' \item{parental_phase : }{The parental marker phasing as used by TetraOrigin, recoded in 1 and 0's}
+#' \item{marginal.likelihoods : }{A list of marginal likelihoods of different valencies, currently \code{NULL}}
+#' \item{valency : }{The predicted valency that maximised the marginal likelihood, per offspring. Currently \code{NULL}}
+#' \item{offspring : }{Offspring names}
 #' \item{biv_dec : }{Logical, the bivalent_decoding parameter specified.}
 #' \item{gap : }{The gap size used in IBD interpolation, by default \code{NULL}. See \code{\link{spline_IBD}}}
 #' \item{genocodes : }{Ordered list of genotype codes used to represent different genotype classes.}
@@ -1027,6 +1112,9 @@ import_IBD <- function(folder=NULL,
                 IBDarray = IBDarray,
                 map = mapData,
                 parental_phase = parentalPhase,
+                marginal.likelihoods = NULL,
+                valency = NULL,
+                offspring = F1names,
                 biv_dec = bivalent_decoding,
                 gap = NULL,
                 genocodes = genocodes,
@@ -1215,6 +1303,7 @@ impute_dosages <- function(IBD_list,
 #' flag extreme deviations from the expected numbers (associated with polysomic inheritance, considered the Null hypothesis),
 #' barplots are coloured according to the level of significance of the X2 test. Plots showing red bars indicate extreme deviations from
 #' a polysomic pattern.
+#' @param precision To how many decimal places should summed probabilities per bivalent pairing be rounded? By default 2. 
 #' @return The function returns a nested list, with one element per linkage group in the same order as the input IBD list.
 #' Per linkage group, a list is returned containing the following components:
 #' \itemize{
@@ -1227,13 +1316,16 @@ impute_dosages <- function(IBD_list,
 #' configuration in the remaining homologues. In this case, row A and column B is the count of individuals where A and B were predicted to have paired,
 #' summed over all three bivalent configurations with A and B paired (AB-CD-EF, AB-CE-DF, AB-CF,DE).}
 #' \item{P2_pairing:  Same as P1_pairing, except using parent 2}
+#' \item{ploidy:  The ploidy of parent 1}
+#' \item{ploidy2:  The ploidy of parent 2}
 #' }
 #' @examples 
 #' data("IBD_4x")
-#' meiosis_report(IBD_list = IBD_4x)
+#' mr.ls<-meiosis_report(IBD_list = IBD_4x)
 #' @export
 meiosis_report <- function(IBD_list,
-                           visualise = TRUE){
+                           visualise = TRUE,
+                           precision = 2){
   
   IBD_list <- test_IBD_list(IBD_list)
   
@@ -1264,7 +1356,7 @@ meiosis_report <- function(IBD_list,
     P2DR <- paste0(LETTERS[(ploidy+1):(ploidy+ploidy2)],collapse="")
   }
   
-  out <- setNames(lapply(seq(length(IBD_list)), function(l=1){
+  out <- setNames(lapply(seq(length(IBD_list)), function(l){
     
     pairing.sums <- setNames(rep(0,length(all.pairings)),all.pairings)
     
@@ -1311,13 +1403,15 @@ meiosis_report <- function(IBD_list,
     P1.x2 <- suppressWarnings(apply(P1.offdiag,1,function(cnts) chisq.test(cnts)$p.val))
     P2.x2 <- suppressWarnings(apply(P2.offdiag,1,function(cnts) chisq.test(cnts)$p.val))
     
-    P1out <- cbind(round(P1counts,2),"Pr(X2)"=P1.x2)
-    P2out <- cbind(round(P2counts,2),"Pr(X2)"=P2.x2)
+    P1out <- cbind(round(P1counts,precision),"Pr(X2)"=P1.x2)
+    P2out <- cbind(round(P2counts,precision),"Pr(X2)"=P2.x2)
     
     return(list("P1_multivalents" = P1countsDR,
                 "P2_multivalents" = P2countsDR,
                 "P1_pairing" = P1out,
-                "P2_pairing" = P2out
+                "P2_pairing" = P2out,
+                "ploidy" = ploidy,
+                "ploidy2" = ploidy2
     ))
     
   }),names(IBD_list))
@@ -1412,6 +1506,7 @@ meiosis_report <- function(IBD_list,
 #' @param use_LG_names Logical, by default \code{FALSE}. Should original character LG names be used as axis labels, or should numbering be used instead?
 #' @param axis_label.cex Argument to adjust the size of the axis labels, can be useful if there are many linkage groups to plot
 #' @param custom_LG_names Specify a vector that contains custom linkage group names. By default \code{NULL}
+#' @param LGdiv.col Colour of dividing lines between linkage groups, by default grey.
 #' @param \dots Arguments passed to \code{\link{plot}}, and \code{\link{lines}} or \code{\link{points}} as appropriate (see argument \code{plot_type}).
 #' @return The plot data, if return_plotData = TRUE. Otherwise \code{NULL}
 #' @examples
@@ -1438,11 +1533,12 @@ plotLinearQTL <- function(LOD_data,
                           use_LG_names = FALSE,
                           axis_label.cex = 1,
                           custom_LG_names = NULL,
+                          LGdiv.col = "gray42",
                           ...){
   
   plot_type <- match.arg(plot_type)
   
-  ## Check whether there is a LOD thresold:
+  ## Check whether there is a LOD threshold:
   LOD_threshold <- 0
   
   if(add_thresh){
@@ -1520,7 +1616,7 @@ plotLinearQTL <- function(LOD_data,
     }
     
     axis(2, las = 1)
-    for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = "gray42",lty = 3)
+    for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = LGdiv.col,lty = 3)
     box()
   }
   ## Add lines
@@ -1590,8 +1686,13 @@ plotLinearQTL <- function(LOD_data,
 #' @param thresh.col Gives user control over the line colour of the significance threshold to be drawn, by default "darkred"
 #' @param return_plotData Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned,
 #' which can be useful for subsequent plot manipulations and overlays.
+#' @param highlight_positions Option to include a list of associated positions to highlight, of the same length and in the same order as \code{LOD_data.ls}.
+#' Each set of positions should be provided in data.frame format with 3 columns corresponding to linkage group, type and ID (same format as the cofactor.df 
+#' argument of function \code{\link{QTLscan}}. This can be useful if genetic co-factor analyses are being compared. 
+#' If no position is to be highlighted, add the corresponding list element as \code{NULL}.
+#' @param LGdiv.col Colour of dividing lines between linkage groups, by default grey.
 #' @param \dots Arguments passed to \code{\link{lines}} or \code{\link{points}} as appropriate (see argument plot_type).
-#' @return The plot data, if return_plotData = TRUE. Otherwise \code{NULL}
+#' @return The plot data, if \code{return_plotData = TRUE}, otherwise \code{NULL}
 #' @examples
 #' \dontrun{
 #' data("qtl_LODs.4x")
@@ -1617,6 +1718,8 @@ plotLinearQTL_list <- function(LOD_data.ls,
                                thresh.lwd = 2,
                                thresh.col = "darkred",
                                return_plotData = FALSE,
+                               highlight_positions = NULL,
+                               LGdiv.col = "gray42",
                                ...){
   ## Check input:
   if(length(plot_type) == 1){
@@ -1627,13 +1730,19 @@ plotLinearQTL_list <- function(LOD_data.ls,
     plot_type <- sapply(plot_type,match.arg,choices = c("lines","points"))
   }
   
-  oldpar <- par(no.readonly = TRUE)    
-  on.exit(par(oldpar))            # Thanks Gregor
+  if(!is.null(highlight_positions)){
+    if(!is.list(highlight_positions) | length(highlight_positions) != length(LOD_data.ls)) 
+    stop("highlight_positions must be a list of the same length as LOD_data.ls")
+    hp <- TRUE
+  } else{
+    hp <- FALSE
+  }
   
+  oldpar <- par(no.readonly = TRUE)    
+  on.exit(par(oldpar))            # Thanks to Gregor, CRAN
   
   if(list.depth(LOD_data.ls) != 3) stop("LOD_data.ls input should be a nested list of outputs of the function QTLscan!")
   if(any(sapply(sapply(LOD_data.ls, function(x) x$Perm.res),is.null))) stop("All elements of LOD_data.ls should have a significance threshold. Otherwise, use the plotLinearQTL function with setting overlay = TRUE")
-  # if(length(LOD_data.ls) == 1) stop("To visualise the results of a single analysis use the function plotLinearQTL instead.")
   
   LOD_data1 <- LOD_data.ls[[1]] #Use the first list element for most of the default data (cM etc..)
   plotdata1 <- as.data.frame(LOD_data1$QTL.res)
@@ -1645,18 +1754,60 @@ plotLinearQTL_list <- function(LOD_data.ls,
   
   additions <- sapply(1:(n.chms - 1), function(n) sum(chm.lens[1:n]))
   
+  ## Remove any chromosome 0 data (possible with single marker regression data)
+  LOD_data.ls <-  lapply(seq(length(LOD_data.ls)), function(l) {
+    temp <- LOD_data.ls[[l]]
+    temp$QTL.res <- temp$QTL.res[temp$QTL.res$chromosome != 0,]
+    return(temp)
+  })
+  
   add.reps <- lapply(seq(length(LOD_data.ls)), function(ds) c(rep(0,length(which(LOD_data.ls[[ds]]$QTL.res$chromosome == 1))),
-                                                              unlist(sapply(2:n.chms, function(n) rep(additions[n-1], length(which(LOD_data.ls[[ds]]$QTL.res$chromosome == n))))))
+                                                              unlist(sapply(2:n.chms, function(n) rep(additions[n-1], 
+                                                                                                      length(which(LOD_data.ls[[ds]]$QTL.res$chromosome == n))))))
                      + (LOD_data.ls[[ds]]$QTL.res$chromosome - 1)*inter_chm_gap
   )
   
-  # add.reps <- add.reps + (plotdata1$chromosome - 1)*inter_chm_gap #add inter_chm_gaps..
   chm.ends <- additions + seq(0,inter_chm_gap*(n.chms-2),inter_chm_gap)
   chm.ends <- c(0,chm.ends, max(chm.ends) + chm.lens[length(chm.lens)])
   
   # Generate a list of the plot data with new column xposns for linear plotting over all LGs on x axis
   plotdata.ls <- lapply(seq(length(LOD_data.ls)), function(i){
-    cbind(as.data.frame(LOD_data.ls[[i]]$QTL.res), "xposns" = LOD_data.ls[[i]]$QTL.res$position + add.reps[[i]])
+    out <- cbind(as.data.frame(LOD_data.ls[[i]]$QTL.res), "xposns" = LOD_data.ls[[i]]$QTL.res$position + add.reps[[i]])
+    out$LOD[out$LOD<0] <- 0
+    return(out)
+  })
+  
+  new.adds <- unique(add.reps[[1]])
+
+  if(hp) hp.ls <- lapply(seq(length(highlight_positions)), function(i){
+    if(!is.null(highlight_positions[[i]])){
+      
+      x <- highlight_positions[[i]]
+      
+      ## Unworked update here... needs some tweaking..
+      # if(length(unique(x[,2])) != 1) stop("Currently, mixing markers and cM positions to highlight is not catered for")
+      
+      # if(x[,2] == "position"){
+      #   out <- plotdata.ls[[i]][plotdata.ls[[i]]$chromosome == x[,1] & 
+      #                             plotdata.ls[[i]]$position == x[,3],]
+      # } else{
+      #   #this bit might cause an issue
+      #   hit <- which(LOD_data.ls[[1]]$Map$marker == x[,3])
+      #   if(length(hit) == 0) {
+      #     warning(paste("Marker",x[,3],"was not found on Map!"))
+      #     out <- NULL
+      #   } else {
+      #     pos <- LOD_data.ls[[1]]$Map[hit,"position"]
+      #     out <- plotdata.ls[[i]][which.min(abs(plotdata.ls[[i]]$position - pos)),]
+      #     }
+      # }
+
+      out <- cbind(x,x[,3] + new.adds[x[,1]])
+      colnames(out)[4] <- "xposn"
+    } else{
+      out <- NULL
+    }
+    return(out)
   })
   
   if(!is.null(ylimits)){
@@ -1665,7 +1816,7 @@ plotLinearQTL_list <- function(LOD_data.ls,
     })
   } else{
     ylimits.ls <- lapply(seq(length(LOD_data.ls)), function(i){
-      extendrange(c(plotdata.ls[[i]]$LOD,LOD_data.ls[[i]]$Perm.res$threshold))
+      extendrange(c(0,plotdata.ls[[i]]$LOD,LOD_data.ls[[i]]$Perm.res$threshold))
     })#add threshold in case not significant, so thresh line always present
   }
   
@@ -1673,21 +1824,23 @@ plotLinearQTL_list <- function(LOD_data.ls,
     (LOD_data.ls[[i]]$Perm.res$threshold - ylimits.ls[[i]][1])/(ylimits.ls[[i]][2]-ylimits.ls[[i]][1])
   })
   
-  #change the one with least space above. First find the min...
-  min.thresh <- LOD_data.ls[[which.min(threshpos)]]$Perm.res$threshold 
-  min.range <- ylimits.ls[[which.min(threshpos)]][2] - ylimits.ls[[which.min(threshpos)]][1]
+  p <- min(threshpos) 
+ 
+  ## Change the ones with least space above. First find the plot with most space above:
   min.base <- ylimits.ls[[which.min(threshpos)]][1]
   
-  ## Rescale top ylimit:
+  ## Rescale plot y limits:
+  
   for(i in setdiff(seq(length(LOD_data.ls)),which.min(threshpos))){
-    ylimits.ls[[i]][2] <- (LOD_data.ls[[i]]$Perm.res$threshold - ylimits.ls[[i]][1])*(min.range)/(min.thresh - min.base) + ylimits.ls[[i]][1]
+    ylimits.ls[[i]][2] <- (LOD_data.ls[[i]]$Perm.res$threshold - (1-p)*min.base)/p
+    ylimits.ls[[i]][1] <- min.base
   }
   
   ## Double check the scaling is now correct:
   threshpos <- sapply(seq(length(LOD_data.ls)), function(i){
     (LOD_data.ls[[i]]$Perm.res$threshold - ylimits.ls[[i]][1])/(ylimits.ls[[i]][2]-ylimits.ls[[i]][1])
   })
-  
+
   if(mean(threshpos) - threshpos[1] > 0.001) {
     message("Rescaled plot limits issue!"); print(ylimits.ls)
     stop("Error in rescaling plots, suggest to check data...")
@@ -1702,7 +1855,7 @@ plotLinearQTL_list <- function(LOD_data.ls,
   
   plot(NULL, xlim=range(plotdata.ls[[1]]$xposns),ylim = shrink.range(ylimits.ls[[1]]), #ylim gets expanded by plot function
        axes=FALSE,xlab = ifelse(add_xaxis,"Linkage group",""), ylab = "", cex.lab = 1.5) #Add axes labels afterwards
-  
+ 
   if(add_xaxis) axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),labels = unique(plotdata1$chromosome))
   
   if(add_rug) {
@@ -1716,13 +1869,13 @@ plotLinearQTL_list <- function(LOD_data.ls,
   axis(2, las = 1)
   mtext(text = sig.unit,side = 2,line = 2.5, col = colours[1])
   
-  for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = "gray42",lty = 3)
-  box()
+  for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = LGdiv.col,lty = 3)
   
   ## Now overlay with the other data:
   for(j in 2:length(LOD_data.ls)){
     
     par(new = TRUE)
+
     plot(NULL, xlim=range(plotdata.ls[[j]]$xposns),ylim = shrink.range(ylimits.ls[[j]]),
          axes=FALSE,xlab = "", ylab = "")
     
@@ -1731,11 +1884,18 @@ plotLinearQTL_list <- function(LOD_data.ls,
       if(plot_type[j] == "lines"){
         lines(plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"xposns"],
               plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"LOD"],col = colours[j],...)
+
       } else{
         points(plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"xposns"],
                plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"LOD"],col = colours[2],...)
       }
     }
+    
+    if(hp && !is.null(hp.ls[[j]])){
+          abline(v = hp.ls[[j]]$xposn, col = colours[j])
+          points(x = hp.ls[[j]]$xposn, y = rep(0,nrow(hp.ls[[j]])),
+                 pch = 17, col = colours[j])
+          }
     
     segments(par("usr")[1], LOD_data.ls[[j]]$Perm.res$threshold,
              par("usr")[2], LOD_data.ls[[j]]$Perm.res$threshold,
@@ -1759,11 +1919,18 @@ plotLinearQTL_list <- function(LOD_data.ls,
     }
   }
   
+  if(hp && !is.null(hp.ls[[1]])){
+    abline(v = hp.ls[[1]]$xposn, col = colours[1])
+    points(x = hp.ls[[1]]$xposn, y = rep(0,nrow(hp.ls[[1]])),
+           pch = 17, col = colours[1])
+  }
+  
   ## Add the significance threshold (this is at the correct level for all plots now...)
   segments(par("usr")[1],LOD_data1$Perm.res$threshold,
            par("usr")[2],LOD_data1$Perm.res$threshold,
            lty=thresh.lty,lwd=thresh.lwd,col=thresh.col)
   
+  box()
   
   if(return_plotData) {
     return(plotdata.ls)
@@ -1911,6 +2078,8 @@ plotQTL <- function(LOD_data,
 #' @param gap The size (in cM) of the gap used to define the grid of positions to define the window in which to estimate 
 #' recombination rate. By default 1 cM. Interpolated positions are taken to be the centre of an interval, so a 1 cM gap would
 #' result in predictions for positions 0.5 cM, 1.5 cM etc.
+#' @param plot_per_LG Logical argument, plot recombination events per linkage group? By default \code{TRUE}.
+#' @param plot_per_ind Logical argument, plot recombination events per individual? By default \code{TRUE}.
 #' @param \dots Option to pass extra arguments to the \code{\link{plot}} function for the per_LG plots. This may lead
 #' to conflicts with arguments already declared internally (such as \code{main} for example).
 #' @return A list with two elements, \code{per_LG} and \code{per_individual}. The first of these is itself a list with the same length as \code{recombination_data}, giving the estimated recombination rates along the linkage group.
@@ -1920,6 +2089,8 @@ plotQTL <- function(LOD_data,
 #' plotRecLS(Rec_Data_4x)
 #' @export
 plotRecLS <- function(recombination_data,
+                      plot_per_LG = TRUE,
+                      plot_per_ind = TRUE,
                       gap = 1,
                       ...){
   
@@ -1946,16 +2117,20 @@ plotRecLS <- function(recombination_data,
           # in this case there are multiple possible valency solutions - combine them:
           val.combined <- do.call(rbind,val.dat)
           
-          cM.unique <- sort(unique(as.numeric(val.combined[,"cM"])))
-          # val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 3,
-          # dimnames = list(NULL,c("cM","Pr","Ind"))))
-          
-          val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 2,
-                                          dimnames = list(NULL,c("cM","Ind"))))
-          
-          val.out[,"cM"] <- cM.unique
-          # val.out[,"Pr"] <- sapply(cM.unique, function(cm) sum(as.numeric(val.combined[val.combined[,"cM"] == cm,"Pr"])))
-          val.out[,"Ind"] <- names(recdat[n])
+          if(ncol(val.combined) == 2){
+            cM.unique <- sort(unique(as.numeric(val.combined[,"cM"])))
+            # val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 3,
+            # dimnames = list(NULL,c("cM","Pr","Ind"))))
+            
+            val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 2,
+                                            dimnames = list(NULL,c("cM","Ind"))))
+            
+            val.out[,"cM"] <- cM.unique
+            # val.out[,"Pr"] <- sapply(cM.unique, function(cm) sum(as.numeric(val.combined[val.combined[,"cM"] == cm,"Pr"])))
+            val.out[,"Ind"] <- names(recdat[n])
+          } else{
+            val.out <- NULL
+          }
           
         } else{
           val.out <- val.dat[[1]]
@@ -1978,16 +2153,17 @@ plotRecLS <- function(recombination_data,
     plotdata <- cbind("cM" = as.numeric(names(plotdata)) - gap/2,
                       "Count" = as.numeric(plotdata))
     
-    plot(plotdata[,"cM"],plotdata[,"Count"],
-         xlim = c(0,max(recombination_data[[ch]]$map$position)),
-         ylim = c(0,max(plotdata[,"Count"])),
-         xlab = "cM", ylab = "Count",
-         main = names(recombination_data)[ch],
-         ...)
-    
     splined.counts <- predict(smooth.spline(plotdata[,"cM"],plotdata[,"Count"]),cM_bins)$y
     
-    lines(cM_bins,splined.counts,lwd = 2, col = "limegreen")
+    if(plot_per_LG){
+      plot(plotdata[,"cM"],plotdata[,"Count"],
+           xlim = c(0,max(recombination_data[[ch]]$map$position)),
+           ylim = c(0,max(plotdata[,"Count"])),
+           xlab = "cM", ylab = "Count",
+           main = names(recombination_data)[ch],
+           ...)
+      lines(cM_bins,splined.counts,...)
+    }
     
     return(list(rec.mat = cbind(rec.mat,"LG" = ch),
                 rec.rates = cbind(cM = cM_bins, rate = round(splined.counts/N,3))))
@@ -2002,17 +2178,19 @@ plotRecLS <- function(recombination_data,
   ## Generate counts of recombination events per individual:
   offspring_counts <- sort(table(combined_rec.mat$Ind))
   
-  plot(NULL,xlim = c(0, length(offspring_counts)),
-       ylim = range(offspring_counts),
-       xlab = "Individual",ylab = "Count (all LGs)",axes=F,
-       main = "Genome-wide count of recombinations per individual")
-  
-  axis(1,las=2,at = 1:length(offspring_counts),
-       labels = names(offspring_counts),
-       cex.axis = 0.6)
-  axis(2,las = 1);box()
-  points(1:length(offspring_counts),offspring_counts,
-         pch=19,col = "darkred")
+  if(plot_per_ind){
+    plot(NULL,xlim = c(0, length(offspring_counts)),
+         ylim = range(offspring_counts),
+         xlab = "Individual",ylab = "Count (all LGs)",axes=F,
+         main = "Genome-wide count of recombinations per individual")
+    
+    axis(1,las=2,at = 1:length(offspring_counts),
+         labels = names(offspring_counts),
+         cex.axis = 0.6)
+    axis(2,las = 1);box()
+    points(1:length(offspring_counts),offspring_counts,
+           ...)
+  }
   
   ## Return output of both dimensions:
   return(list(per_LG = perLG.ls,
@@ -2431,7 +2609,7 @@ PVE <- function(IBD_list,
 #' @return
 #' A nested list; each list element (per linkage group) contains the following items:
 #' \itemize{
-#' \item{QTL.res : }{Single matrix of QTL results with columns chromosome, position, LOD and expl.var (rate of variance explained at each position).}
+#' \item{QTL.res : }{Single matrix of QTL results with columns chromosome, position, LOD, adj.r.squared and PVE (percentage variance explained).}
 #' \item{Perm.res : }{If \code{perm_test} = \code{FALSE}, this will be \code{NULL}.
 #' Otherwise, Perm.res contains a list of the results of the permutation test, with list items
 #' "quantile","threshold" and "scores". Quantile refers to which quantile of scores was used to determine the threshold.
@@ -2860,14 +3038,14 @@ QTLscan <- function(IBD_list,
       if(RSS1 == 0) warning("Model over-fitting encountered. No residual variation left on which to judge model fit! Perhaps increase population size?")
       LOD <- (popSize/2)*log10(RSS0/RSS1)
       adj.r.squared <- max(summary(lmRes)$adj.r.squared,0) #This can be negative..don't want negative R2adj, so set to 0
-      
-      return(c(LOD,adj.r.squared))
+      PVE <- 100*(1 - 10^(-2*LOD/popSize))
+      return(c(LOD,adj.r.squared,PVE))
     } #run_lm
     
     # Apply the regression to all the positions fitted using IBDs:
     LOD_var <- t(apply(IBDprobs,1, run_lm, resid.pheno, IBDtype))
     suppressWarnings(output <- cbind(map.1,LOD_var))
-    colnames(output)[3:4] <- c("LOD","adj.r.squared")
+    colnames(output)[3:5] <- c("LOD","adj.r.squared","PVE")
     rownames(output) <- NULL
     
     if(perm_test){
@@ -2909,7 +3087,8 @@ QTLscan <- function(IBD_list,
           RSS1 <- anv[nrow(anv),2]
           LOD <- (popN/2)*log10(RSSzero/RSS1)
           adj.r.squared <- summary(lmRes)$adj.r.squared
-          return(c(LOD,adj.r.squared))
+          PVE <- 100*(1 - 10^(-2*LOD/popN))
+          return(c(LOD,adj.r.squared,PVE))
         } #run_lm.perm
         
         if(blockTF){
@@ -3100,9 +3279,10 @@ segMaker <- function(ploidy,
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @return A list containing the following components:
 #' \itemize{
-#' \item{fit : }{The LOD (actually the -log(p) of the model fit) and, if requested, R2 values associated with fitting a
-#' linear model at the marker specified}
-#' \item{means : }{ The means of each dosage class at the marker position}
+#' \item{QTL.res : }{ The -log(p) of the model fit per marker are returned as "LOD" scores, although "LOP" would have been a better description.
+#' If requested, R2 values are also returned in column "R2adj"}
+#' \item{Perm.res : }{ The results of the permutation test if performed, otherwise \code{NULL}}
+#' \item{Map : }{ The linkage map if provided, otherwise \code{NULL}}
 #' }
 #' @examples
 #' data("SNP_dosages.4x","BLUEs.pheno")
@@ -3700,6 +3880,7 @@ visualiseGIC <- function(GIC_list,
 #' in which case no overlay of predicted recombination events is performed. However, it can be useful
 #' to visualise predicted recombination events, particularly as this might help inform the choice of argument \code{plausible_pairing_prob}
 #' of that function. See \code{\link{count_recombinations}} for more details.
+#' @param reset_par By default \code{TRUE}, reset par on exit.
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @return If \code{recombinant_scan} vector is supplied, a vector of recombinant offspring ID in the region of interest (otherwise \code{NULL}).
 #' @examples
@@ -3731,10 +3912,11 @@ visualiseHaplo <- function(IBD_list,
                            colPal = c("white","navyblue","darkred"),
                            hap.wd = 0.4,
                            recombination_data = NULL,
+                           reset_par = TRUE,
                            log = NULL) {
   
   oldpar <- par(no.readonly = TRUE)
-  on.exit(par(oldpar)) 
+  if(reset_par) on.exit(par(oldpar)) 
   
   # Check input
   IBD_list <- test_IBD_list(IBD_list)
@@ -3863,7 +4045,8 @@ visualiseHaplo <- function(IBD_list,
         if(length(phenoGeno) != length(select_offspring)) warning("Merely ",paste(length(phenoGeno),"of the",length(select_offspring),"offspring names could be matched!"))
       }
     )
-    plotorder <- order(phenoGeno)
+
+    plotorder <- 1:length(phenoGeno)
   }
   
   popSize <- length(phenoGeno)
@@ -4043,6 +4226,101 @@ visualiseHaplo <- function(IBD_list,
               allele_fish = alleles_fished))
   
 } #visualiseHaplo
+
+#' Visualise pairing of parental homologues
+#' @description Function to visualise the pairing of parental homologues across the population using graph, with nodes 
+#' to denote parental homologues and edges to denote deviations from expected proportions under a polysomic model of inheritance
+#' @param meiosis_report.ls List output of function \code{\link{meiosis_report}}
+#' @param pos.col Colour corresponding to excess of pairing associations predicted (positive deviations), by default red 
+#' @param neg.col Colour corresponding to lack of pairing associations predicted (negative deviations), by default blue
+#' @param parent The parent, either "P1" (mother) or "P2 (father)
+#' @param max.lwd Maximum line width, by default 20
+#' @param datawidemax This argument is currently a work-around to allow multiple plots to have the same scale (line thicknesses consistent).
+#' No default is provided. To estimate this value, simply set argument \code{return.data = TRUE}, and record the
+#' maximum absolute value over columns 'count', which are the deviations from random expectations. This should be done
+#' over multiple function calls if e.g. comparing both P1 and P2 values. When a global maximum (absolute) deviation is known,
+#' re-run the function with this value for \code{datawidemax}. The line width specified by \code{max.lwd} will then be
+#'  used for this, and all other line widths re-scaled accordingly.
+#' @param add.label Should a label be applied, giving the maximum deviation in the plot? By default \code{TRUE}
+#' @param return.data Should plot data be returned? By default \code{FALSE}
+#' @param \dots Optional arguments passed to \code{\link[igraph]{plot.igraph}}
+#' @return If \code{return.data = TRUE}, the values for pairwise deviations from the expected numbers are 
+#' returned, useful for determining the value \code{datawidemax} to provide consistent scaling across multiple plots
+#' @examples
+#' data("mr.ls")
+#' visualisePairing(meiosis_report.ls = mr.ls,
+#'                  parent = "P1",
+#'                  datawidemax = 3)
+#' @export
+visualisePairing <- function(meiosis_report.ls, 
+                             pos.col = "red", 
+                             neg.col = "blue",
+                             parent,
+                             max.lwd = 20,
+                             datawidemax,
+                             add.label = TRUE,
+                             return.data = FALSE,
+                             ...){
+  
+  parent <- match.arg(parent, choices = c("P1","P2"))
+  
+  out.ls <- setNames(lapply(seq(length(meiosis_report.ls)), function(l){
+    ploidy <- ifelse(parent == "P1",
+                     meiosis_report.ls[[l]]$ploidy,
+                     meiosis_report.ls[[l]]$ploidy2)
+    
+    pairmat <- meiosis_report.ls[[l]][[paste0(parent,"_pairing")]]
+    
+    countmat <- pairmat[,1:ploidy]
+    
+    if(ncol(countmat) != nrow(countmat)) stop("pairmat should be checked.")
+    cs <- t(combn(rownames(countmat),2))
+    edges <- as.data.frame(cbind(cs,countmat[lower.tri(countmat)]))
+    colnames(edges) <- c("h1","h2","count")
+    edges$count <- as.numeric(edges$count)
+    ## express the counts as deviations from the mean:
+    m.cnt <- mean(countmat[1,2:ploidy])
+    edges$count <- edges$count - m.cnt
+    edges$sign <- edges$count > 0
+    edges$count <- abs(edges$count)
+    edges$col <- rep(neg.col,nrow(edges))
+    edges$col[edges$sign] <- pos.col
+    
+    ## Need to re-scale so that weights are equal across plots.
+    edges$rescaled <- max.lwd*edges$count/datawidemax
+    
+    g <- igraph::graph_from_data_frame(edges[,c("h1","h2")], directed = FALSE)
+    l <- igraph::layout_in_circle(g)
+    
+    xtrm <- edges[which.max(edges$count),]
+    x <- unlist(round(xtrm[3]))
+    if(!xtrm$sign) x <- -x
+    
+    homs <- paste0("(",paste(xtrm[1:2], collapse = " & "),")")
+    
+    igraph::plot.igraph(g,layout = l, 
+                        vertex.label.color = "black",
+                        vertex.label.family = "sans",
+                        edge.width = edges$rescaled,
+                        edge.color = edges$col,
+                        vertex.color = "white",
+                        ...)
+    
+    if(add.label) text(x = 0, y = 1.2*par("usr")[4], 
+                       labels = bquote(delta[max] ~ .(homs) == .(x)), cex = 1.2)
+    
+    if(return.data) {
+      return(edges)
+    } else{
+      return(NULL)
+    }
+    
+  }),
+  names(meiosis_report.ls))
+  
+  return(invisible(out.ls))
+  
+  } #visualisePairing
 
 #' Visualise QTL homologue effects around a QTL position
 #' @description Function to visualise the effect of parental homologues around a QTL peak across the population.

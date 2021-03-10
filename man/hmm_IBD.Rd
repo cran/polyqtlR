@@ -18,6 +18,7 @@ hmm_IBD(
   map_function = "haldane",
   bivalent_decoding = TRUE,
   error = 0.01,
+  full_multivalent_hexa = FALSE,
   verbose = FALSE,
   ncores = 1
 )
@@ -76,6 +77,9 @@ Currently only \code{"haldane"} or \code{"kosambi"} are allowed.}
 \item{bivalent_decoding}{Option to consider only bivalent pairing during formation of gametes (ignored for diploid populations, as only bivalents possible there), by default \code{TRUE}}
 
 \item{error}{The (prior) probability of errors in the offspring dosages, usually assumed to be small but non-zero}
+
+\item{full_multivalent_hexa}{Option to allow multivalent pairing in both parents at the hexaploid level, by default \code{FALSE}. Note that if \code{TRUE},
+a very large available RAM may be required (>= 32Gb) to process the data.}
 
 \item{verbose}{Logical, by default \code{TRUE}. Should progress messages be written?}
 

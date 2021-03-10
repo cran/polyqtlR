@@ -27,7 +27,8 @@ If no recombinations are predicted, a \code{NA} value is given instead.
 The function \code{count_recombinations} returns a list of all predicted recombination breakpoints. The output can be passed 
 using the argument \code{recombination_data} to the function \code{\link{visualiseHaplo}}, where the predicted breakpoints overlay the haplotypes. 
 Alternatively, a genome-wide visualisation of the recombination landscape both per linkage group and per individual can be generated using the function \code{\link{plotRecLS}}, 
-which can be useful in identifying problematic areas of the linkage maps, or problematic individuals in the population.
+which can be useful in identifying problematic areas of the linkage maps, or problematic individuals in the population. Currently, recombination break-points
+are only estimated from bivalents in meiosis; any offspring resulting from a predicted multivalent is excluded from the analysis and will be returned with a \code{NA} value.
 }
 \examples{
 data("IBD_4x")

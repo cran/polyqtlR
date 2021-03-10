@@ -26,6 +26,7 @@ visualiseHaplo(
   colPal = c("white", "navyblue", "darkred"),
   hap.wd = 0.4,
   recombination_data = NULL,
+  reset_par = TRUE,
   log = NULL
 )
 }
@@ -88,6 +89,8 @@ generated to make this option meaningful.}
 in which case no overlay of predicted recombination events is performed. However, it can be useful
 to visualise predicted recombination events, particularly as this might help inform the choice of argument \code{plausible_pairing_prob}
 of that function. See \code{\link{count_recombinations}} for more details.}
+
+\item{reset_par}{By default \code{TRUE}, reset par on exit.}
 
 \item{log}{Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.}
 }
