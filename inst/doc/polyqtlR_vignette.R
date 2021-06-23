@@ -28,12 +28,6 @@ data("phased_maplist.4x", "SNP_dosages.4x", "Phenotypes_4x")
 ## ----echo = FALSE-------------------------------------------------------------
 nc <- 2 #to pass CRAN checks
 
-## ----eval=FALSE---------------------------------------------------------------
-#  IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
-#                         genotypes = SNP_dosages.4x,
-#                         method = "heur",
-#                         ploidy = 4)
-
 ## ---- eval = FALSE------------------------------------------------------------
 #  IBD_4x <- import_IBD(folder = "TetraOrigin",
 #                       filename.vec = paste0("TetraOrigin_Output_bivs_LinkageGroup",1:5,"_Summary"),
@@ -43,6 +37,12 @@ nc <- 2 #to pass CRAN checks
 #  Importing map data under description inferTetraOrigin-Summary,Genetic map of biallelic markers
 #  Importing parental phasing under description inferTetraOrigin-Summary,MAP of parental haplotypes
 #  Importing IBD data under description inferTetraOrigin-Summary,Conditonal genotype probability
+
+## ----eval=FALSE---------------------------------------------------------------
+#  IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
+#                         genotypes = SNP_dosages.4x,
+#                         method = "heur",
+#                         ploidy = 4)
 
 ## -----------------------------------------------------------------------------
 thinned_maplist.4x <- thinmap(maplist = phased_maplist.4x,
@@ -151,8 +151,7 @@ findPeak(qtl_LODs.4x, linkage_group = 1)
 #                                  trait.ID = "pheno",
 #                                  block = "year",
 #                                  cofactor_df = data.frame("LG" = 1,
-#                                                           "type" = "position",
-#                                                           "ID" = 12.3),
+#                                                           "cM" = 12.3),
 #                                  perm_test = FALSE,
 #                                  ncores = nc)#nc is the number of cores, defined earlier
 
@@ -184,6 +183,37 @@ qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cof_fastpermute.RDS")
 ## -----------------------------------------------------------------------------
 plotLinearQTL(LOD_data = qtl_LODs.4x_cofactor,
               col = "red")
+
+## ----eval = FALSE-------------------------------------------------------------
+#  blues <- BLUE(data = Phenotypes_4x,
+#                model = pheno~geno,
+#                random = ~1|year,
+#                genotype.ID = "geno")
+#  
+#  QTLmodel <- check_cofactors(IBD_list = IBD_4x,
+#                                      Phenotype.df = blues,
+#                                      genotype.ID = "geno",
+#                                      trait.ID = "blue",
+#                                      LOD_data = qtl_LODs.4x,
+#                                      ncores = nc)
+#  
+#  
+#  QTLmodel
+
+## ----echo = FALSE-------------------------------------------------------------
+blues <- BLUE(data = Phenotypes_4x,
+              model = pheno~geno,
+              random = ~1|year,
+              genotype.ID = "geno")
+QTLmodel <- readRDS(file = "QTLmodel.RDS")
+QTLmodel
+
+## -----------------------------------------------------------------------------
+PVE(IBD_list = IBD_4x,
+    Phenotype.df = blues,
+    genotype.ID = "geno",
+    trait.ID = "blue",
+    QTL_df = QTLmodel)
 
 ## -----------------------------------------------------------------------------
 plotLinearQTL_list(LOD_data.ls = list(qtl_LODs.4x,
@@ -266,7 +296,7 @@ PVE(IBD_list = IBD_4x,
                 genotype.ID = "geno",
                 trait.ID = "pheno",
                 block = "year",
-                QTL_df = data.frame("LG" = 1,"type" = "position","id" = 12.3))
+                QTL_df = data.frame("LG" = 1,"cM" = 12.3))
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  mr <- meiosis_report(IBD_list = IBD_4x)

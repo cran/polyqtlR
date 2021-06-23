@@ -11,8 +11,6 @@ PVE(
   trait.ID,
   block = NULL,
   QTL_df = NULL,
-  folder = NULL,
-  filename.short,
   prop_Pheno_rep = 0.5,
   log = NULL,
   verbose = FALSE
@@ -30,16 +28,9 @@ PVE(
 \item{block}{The blocking factor to be used, if any (must be colname of \code{Phenotype.df}). By default \code{NULL}, in 
 which case no blocking structure (for unreplicated experiments)}
 
-\item{QTL_df}{A 3-column data frame of previously detected QTLs containing the following columns: column 1 gives linkage 
-group identifiers, column 2 specifies the fitted QTL type, i.e. whether the fitted QTL is a "marker" or "position",
-and column 3 gives the marker/position IDs of the fitted QTL. If not specified, an error results.}
-
-\item{folder}{If markers are to be used as fitted QTL and TetraOrigin was used for IBD estimation, the path to the folder 
-in which the imported IBD probabilities is contained can be provided here. By default this is \code{NULL}, if files are in working directory.}
-
-\item{filename.short}{If a fitted QTL is a specific marker and TetraOrign was used for IBD estimation, the shortened stem of the filename
-of the \code{.csv} files containing the output of TetraOrigin, i.e. without the tail "_LinkageGroupX_Summary.csv" which is 
-added by default to all output of TetraOrigin.}
+\item{QTL_df}{A 2-column data frame of previously-detected QTL; column 1 gives linkage group identifiers, 
+column 2 specifies the cM position of the QTL. If not specified, an error results. It can be convenient to generate a compatible
+data.frame by first running the function \code{\link{check_cofactors}} to build a multi-QTL model.}
 
 \item{prop_Pheno_rep}{The minimum proportion of phenotypes represented across blocks. If less than this, the individual is 
 removed from the analysis. If there is incomplete data, the missing phenotypes are imputed using the mean values across the recorded observations.}
@@ -64,5 +55,5 @@ PVE(IBD_list = IBD_4x,
     Phenotype.df = Phenotypes_4x,
     genotype.ID = "geno",trait.ID = "pheno",
     block = "year",
-    QTL_df = data.frame(LG=1,type="position",id=12.3))
+    QTL_df = data.frame(LG=1,cM=12.3))
 }

@@ -14,6 +14,7 @@ fast_permute(
   N_perm = 1000,
   alpha = 0.05,
   ncores = 1,
+  verbose = TRUE,
   log = NULL
 )
 }
@@ -36,6 +37,8 @@ fast_permute(
 
 \item{ncores}{Number of cores to use, by default 1 only. Works both for Windows and UNIX (using \code{doParallel}).
 Use \code{parallel::detectCores()} to find out how many cores you have available.}
+
+\item{verbose}{Logical, by default \code{TRUE}. Should messages be printed during running?}
 
 \item{log}{Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.}
 }

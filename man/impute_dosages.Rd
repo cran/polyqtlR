@@ -10,7 +10,7 @@ impute_dosages(
   parent1 = "P1",
   parent2 = "P2",
   rounding_error = 0.05,
-  min_error_prior = 0.5,
+  min_error_prior = 0.1,
   verbose = TRUE
 )
 }
@@ -28,7 +28,8 @@ score of 2.97 or 3.01 would both be rounded to a dosage of 3, while 2.87 would b
 If you find the output contains too many missing values, a possibility would be to increase the \code{rounding_error}. However this may
 also introduce more errors in the output!}
 
-\item{min_error_prior}{Suggestion for a suitably high error prior to be used in IBD calculations to ensure IBD smoothing is achieved}
+\item{min_error_prior}{Suggestion for a suitably high error prior to be used in IBD calculations to ensure IBD smoothing is achieved. If IBD probabilities were estimated 
+with a smaller error prior, the function aborts.}
 
 \item{verbose}{Should messages be written to standard output?}
 }

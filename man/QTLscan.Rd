@@ -20,6 +20,7 @@ QTLscan(
   gamma = 0.05,
   ncores = 1,
   log = NULL,
+  verbose = TRUE,
   ...
 )
 }
@@ -38,8 +39,7 @@ QTLscan(
 
 \item{filename.short}{If TetraOrigin was used and co-factors are being included, the shortened stem of the filename of the \code{.csv} files containing the output of TetraOrigin, i.e. without the tail "_LinkageGroupX_Summary.csv" which is added by default to all output of TetraOrigin.}
 
-\item{cofactor_df}{A 3-column data frame of co-factor(s); column 1 gives linkage group identifiers, column 2 specifies the co-factor type, i.e. whether the co-factor is a "marker" or "position",
-and column 3 gives the marker/position IDs of the co-factors. By default \code{NULL}, in which case no co-factors are included in the analysis.}
+\item{cofactor_df}{A 2-column data frame of co-factor(s); column 1 gives linkage group identifiers, column 2 specifies the cM position of the co-factors. By default \code{NULL}, in which case no co-factors are included in the analysis.}
 
 \item{prop_Pheno_rep}{The minimum proportion of phenotypes represented across blocks. If less than this, the individual is removed from the analysis. If there is incomplete
 data, the missing phenotypes are imputed using the mean values across the recorded observations.}
@@ -57,6 +57,8 @@ genome-wide significance threshold.}
 Use \code{parallel::detectCores()} to find out how many cores you have available.}
 
 \item{log}{Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.}
+
+\item{verbose}{Logical, by default \code{TRUE}. Should messages be printed during running?}
 
 \item{\dots}{Arguments passed to \code{\link{plot}}}
 }

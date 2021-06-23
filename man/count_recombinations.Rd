@@ -7,7 +7,7 @@
 count_recombinations(IBD_list, plausible_pairing_prob = 0.4)
 }
 \arguments{
-\item{IBD_list}{List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}), assuming bivalent pairing.}
+\item{IBD_list}{List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}).}
 
 \item{plausible_pairing_prob}{The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
 The default setting of 0.4 is rather low - but accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.

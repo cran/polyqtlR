@@ -313,6 +313,7 @@ fast_IBD <- function(phased_maplist,
 #' @param alpha The P-value to be used in the selection of a threshold, by default 0.05 (i.e. the 0.95 quantile).
 #' @param ncores Number of cores to use, by default 1 only. Works both for Windows and UNIX (using \code{doParallel}).
 #' Use \code{parallel::detectCores()} to find out how many cores you have available.
+#' @param verbose Logical, by default \code{TRUE}. Should messages be printed during running?
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @return
 #' A nested list; each list element (per linkage group) contains the following items:
@@ -342,6 +343,7 @@ fast_permute <- function(IBD_list,
                          N_perm = 1000,
                          alpha = 0.05,
                          ncores = 1,
+                         verbose = TRUE,
                          log = NULL){
   
   if(is.null(log)) {
@@ -405,7 +407,7 @@ fast_permute <- function(IBD_list,
     dimnames(IBDarray)[[3]],
     unique(Phenotype.df[,genotype.ID]))
   
-  write(paste("There are",length(phenoGeno0),"individuals with matching identifiers between phenotypic and genotypic datasets.\n"),log.conn)
+  if(verbose) write(paste("There are",length(phenoGeno0),"individuals with matching identifiers between phenotypic and genotypic datasets.\n"),log.conn)
   
   pheno <- Phenotype.df[Phenotype.df[,genotype.ID] %in% phenoGeno0,c(genotype.ID,trait.ID)]
   
@@ -440,7 +442,7 @@ fast_permute <- function(IBD_list,
   
   RSS0 <- sum((pheno$Pheno - mean(pheno$Pheno))^2)
   
-  write(paste("\nRunning QTL analysis with",popSize,"individuals...\n"),log.conn)
+  if(verbose) write(paste("\nRunning QTL analysis with",popSize,"individuals...\n"),log.conn)
   
   if(length(IBD_list) > 1){
     IBDprobs <- abind::abind(lapply(seq(length(IBD_list)), function(i) IBD_list[[i]]$IBDarray[,,phenoGeno]),
@@ -478,8 +480,7 @@ fast_permute <- function(IBD_list,
     map.1 <- map
   }
   
-  
-  message("Running permutation test....")
+  if(verbose) message("Running permutation test....")
   time_start <- Sys.time()
   
   win <- Sys.info()["sysname"] == "Windows"
@@ -562,6 +563,32 @@ fast_permute <- function(IBD_list,
   
   return(output)
 } #fast_permute
+
+
+#' Extract QTL peak positions from the results of a QTL scan
+#' @description Function to find QTL peaks from output of a QTL scan
+#' @param LOD_data Output of \code{\link{QTLscan}} function
+findQTLpeaks <- function(LOD_data){
+  if(is.null(LOD_data$Perm.res)) stop("findQTLpeaks :: Please re-run QTLscan with perm_test = TRUE to check significance.")
+  
+  thresh <- LOD_data$Perm.res$threshold
+  chms <- unique(LOD_data$QTL.res$chromosome)
+  
+  QTL.df <- data.frame("LG"=NULL,
+                       "cM"=NULL,
+                       "deltaLOD"=NULL)
+  for(lg in chms){
+    lgdat <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == lg,]
+    
+    if(any(lgdat$LOD >= thresh)){
+      QTL.df <- rbind(QTL.df,data.frame("LG" = lg,
+                                        "cM" = lgdat[lgdat$LOD == max(lgdat$LOD),"position"],
+                                        "deltaLOD" = lgdat[lgdat$LOD == max(lgdat$LOD),"LOD"] - thresh))
+    }
+  }
+  
+  return(QTL.df)
+} #findQTLpeaks
 
 
 #' Hexavalent transition matrix function

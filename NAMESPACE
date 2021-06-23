@@ -3,6 +3,7 @@
 export(BLUE)
 export(PVE)
 export(QTLscan)
+export(check_cofactors)
 export(convert_mappoly_to_phased.maplist)
 export(count_recombinations)
 export(estimate_GIC)

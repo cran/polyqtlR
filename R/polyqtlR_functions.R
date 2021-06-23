@@ -40,13 +40,200 @@ BLUE <- function(data,
 } #BLUE
 
 
+#' Build a multi-QTL model using step-wise procedure of checking genetic co-factors.
+#' @description The function \code{check_cofactors} initially fits all significant QTL positions as co-factors, both individually and in combination. Significance thresholds
+#' are re-estimated each time, yielding threshold-corrected LOD scores. If this leads to a change in the estimated position of QTL, or detection of subsequent peaks, a second 
+#' round of co-factor inclusion is performed for all new QTL or novel QTL combinations. Finally, the multi-QTL model that maximises the individual significance of each
+#' QTL is returned as a data.frame. This can be directly passed to the function \code{\link{PVE}} to estimate the percentage variance explained by the full
+#' multi-QTL model and all possible sub-models. 
+#' Note: this function estimates the most likely QTL positions by maximising the threshold-corrected LOD at QTL peaks.
+#' Non-additive interactions between QTL may be missed as a result. It is recommended to run a manual co-factor analysis as well,
+#' as described in the package vignette.
+#' @param IBD_list List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}).
+#' @param Phenotype.df A data.frame containing phenotypic values
+#' @param genotype.ID The colname of \code{Phenotype.df} that contains the population identifiers (F1 names) (must be a colname of \code{Phenotype.df})
+#' @param trait.ID The colname of \code{Phenotype.df} that contains the response variable to use in the model (must be a colname of \code{Phenotype.df})
+#' @param LOD_data Output of \code{\link{QTLscan}} function.
+#' @param min_res The minimum genetic distance (resolution) assumed possible to consider 2 linked QTL (on the same linkage group) as independent. By default a value of 20 cM is used.
+#' This is not to suggest that 20 cM is a realistic resolution in a practical mapping study, but it provides the function with a criterion to consider 2 significant QTL within this distance as one and the same. 
+#' For this purpose, 20 cM seems a reasonable value to use. In practice, closely linked QTL will generally "explain" all the variation at nearby positions, making it unlikely to
+#' be able to disentangle their effects. QTL positions will vary slightly when co-factors are introduced, but again this variation is presumed not to exceed 20 cM either side.
+#' @param ncores How many CPU cores should be used in the evaluation? By default 1 core is used.
+#' @param verbose Logical, by default \code{TRUE} - should progress messages be printed to the console?
+#' @return Data frame with the following columns:
+#' \itemize{
+#' \item{LG: }{ Linkage group identifier}
+#' \item{cM: }{ CentiMorgan position}
+#' \item{deltaLOD: }{ The difference between the LOD score at the peak and the significance threshold (always positive, otherwise the QTL would not be significant)}
+#' \item{CofactorID: }{ A identifier giving the co-factor model used in detecting the QTL (if no co-factors were included then \code{NA}). The co-factor model is described
+#' by concatenating all co-factor positions with a '+', so for example 1_10+4_20 would mean a co-factor model with 2 positions included as co-factors, namely 10 cM on linkage
+#' group 1 and 20 cM on linkage group 4.}
+#' }
+#' @examples 
+#' data("IBD_4x","BLUEs.pheno","qtl_LODs.4x")
+#' check_cofactors(IBD_list=IBD_4x,Phenotype.df=BLUEs.pheno,
+#' genotype.ID="Geno",trait.ID="BLUE",LOD_data=qtl_LODs.4x)
+#' @export
+check_cofactors <- function(IBD_list,
+                            Phenotype.df,
+                            genotype.ID,
+                            trait.ID,
+                            LOD_data,
+                            min_res = 20,
+                            ncores = 1,
+                            verbose = TRUE){
+  ## Initial checks
+  if(is.null(LOD_data$Perm.res)) stop("This function only fits significant QTL positions as co-factors. Please re-run QTLscan with perm_test = TRUE to check significance.")
+  
+  if(length(which(LOD_data$QTL.res$LOD > LOD_data$Perm.res$threshold)) == 0) stop("This function only fits significant QTL positions as co-factors. If you still want to add non-significant positions as co-factors, use function QTLscan instead.")
+  
+  qtl.df <- findQTLpeaks(LOD_data)
+  
+  ## For safety (should have been caught in last check..)
+  if(nrow(qtl.df) == 0) stop("This function only fits significant QTL positions as co-factors. If you still want to add non-significant positions as co-factors, use function QTLscan instead.")
+  
+  if(verbose) message(paste0("There ",ifelse(nrow(qtl.df) == 1,"was ","were "),nrow(qtl.df)," significant QTL detected in initial scan, proceeding with these..."))
+  
+  ## Generate all possible combinations of QTL:
+  QTLmodel.list <- lapply(1:nrow(qtl.df), function(n) combn(1:nrow(qtl.df),n))
+  
+  if(verbose) message("Searching for extra QTL given detected co-factors....")
+  
+  fullQTL <- do.call(rbind,lapply(QTLmodel.list, function(q_mat){
+    do.call(rbind,apply(q_mat,2,function(sub_q){
+      
+      temp.QTL <- QTLscan(IBD_list = IBD_list,
+                          Phenotype.df = Phenotype.df,
+                          genotype.ID = genotype.ID,
+                          trait.ID = trait.ID,
+                          cofactor_df = qtl.df[sub_q,],
+                          verbose = FALSE)
+      
+      resids <- temp.QTL$Residuals
+      
+      temp.QTL <- QTLscan(IBD_list = IBD_list,
+                          Phenotype.df = resids,
+                          genotype.ID = genotype.ID,
+                          trait.ID = "Pheno",
+                          perm_test = TRUE,
+                          ncores = ncores,
+                          verbose = FALSE)
+      
+      temp_qtl.df <- findQTLpeaks(temp.QTL)
+      
+      if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),sep="_"),collapse="+")
+      
+      return(temp_qtl.df)
+    }))
+  })
+  )
+  
+  ## Add the original QTL positions as well:
+  qtl.df$CofactorID <- NA 
+  fullQTL <- rbind(fullQTL,qtl.df) 
+  
+  ## Need to reduce this down to best positions
+  refinedQTL <- do.call(rbind,lapply(sort(unique(fullQTL$LG)), function(lg){
+    temp <- fullQTL[fullQTL$LG == lg,]
+    
+    out <- temp[which.max(temp$deltaLOD),]
+    
+    if(max(abs(out$cM - temp$cM)) >= min_res){
+      rest <- temp[-which.max(temp$deltaLOD),]
+      rest <- rest[abs(rest$cM - out$cM) >= min_res,]
+      if(nrow(rest) >= 1){
+        out <- rbind(out,rest[which.max(rest$deltaLOD),])
+      }
+    }
+    
+    return(out)
+  }))
+  
+  if(nrow(refinedQTL) > nrow(qtl.df)){
+    ## There were new QTL discovered in the process, run the procedure again 
+    if(verbose) message("New QTL detected: attempting to refine QTL positions further....")
+    
+    overlap <- NULL
+    for(r in 1:nrow(refinedQTL)){
+      hit <- refinedQTL[r,"LG"] == qtl.df$LG & refinedQTL[r,"cM"] == qtl.df$cM
+      if(any(hit)) overlap <- c(overlap,r)
+    }
+    
+    QTLmodel.list2 <- lapply(1:nrow(refinedQTL), function(n) {
+      out <- combn(1:nrow(refinedQTL),n)
+      if(length(overlap) > 0){
+        rem <- apply(out,2,function(x) all(x%in%overlap))
+        if(any(rem)) out <- out[,-which(rem),drop = FALSE]  
+      }
+      return(out)
+    })
+    
+    
+    refinedQTL2 <- do.call(rbind,lapply(QTLmodel.list2, function(q_mat){
+      do.call(rbind,apply(q_mat,2,function(sub_q){
+        
+        temp.QTL <- QTLscan(IBD_list = IBD_list,
+                            Phenotype.df = Phenotype.df,
+                            genotype.ID = genotype.ID,
+                            trait.ID = trait.ID,
+                            cofactor_df = refinedQTL[sub_q,],
+                            verbose = FALSE)
+        
+        resids <- temp.QTL$Residuals
+        
+        temp.QTL <- QTLscan(IBD_list = IBD_list,
+                            Phenotype.df = resids,
+                            genotype.ID = genotype.ID,
+                            trait.ID = "Pheno",
+                            perm_test = TRUE,
+                            ncores = ncores,
+                            verbose = FALSE)
+        
+        temp_qtl.df <- findQTLpeaks(temp.QTL)
+        
+        if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(refinedQTL$LG[sub_q],round(refinedQTL$cM[sub_q],2),sep="_"),collapse="+")
+
+        return(temp_qtl.df)
+      }))
+    }))
+    
+   
+    refinedQTL2 <- rbind(refinedQTL2,refinedQTL)
+    
+    outputQTL <- do.call(rbind,lapply(sort(unique(refinedQTL2$LG)), function(lg){
+      temp <- refinedQTL2[refinedQTL2$LG == lg,]
+      
+      out <- temp[which.max(temp$deltaLOD),]
+      
+      if(max(abs(out$cM - temp$cM)) >= min_res){
+        rest <- temp[-which.max(temp$deltaLOD),]
+        rest <- rest[abs(rest$cM - out$cM) >= min_res,]
+        if(nrow(rest) >= 1){
+          out <- rbind(out,rest[which.max(rest$deltaLOD),])
+        }
+      }
+      
+      return(out)
+    }))
+    
+  } else{
+    outputQTL <- refinedQTL
+  }
+  
+  rownames(outputQTL) <- NULL #tidy up
+  
+  return(outputQTL)
+  
+} #check_cofactors
+
+
 #' Predict recombination breakpoints using IBD probabilities
 #' @description The function \code{count_recombinations} returns a list of all predicted recombination breakpoints. The output can be passed 
 #' using the argument \code{recombination_data} to the function \code{\link{visualiseHaplo}}, where the predicted breakpoints overlay the haplotypes. 
 #' Alternatively, a genome-wide visualisation of the recombination landscape both per linkage group and per individual can be generated using the function \code{\link{plotRecLS}}, 
 #' which can be useful in identifying problematic areas of the linkage maps, or problematic individuals in the population. Currently, recombination break-points
 #' are only estimated from bivalents in meiosis; any offspring resulting from a predicted multivalent is excluded from the analysis and will be returned with a \code{NA} value.
-#' @param IBD_list List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}), assuming bivalent pairing.
+#' @param IBD_list List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}).
 #' @param plausible_pairing_prob The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
 #' The default setting of 0.4 is rather low - but accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.
 #' In such situations, both pairing configurations (also termed "valencies") would be expected to have a probability close to 0.5. Both are then considered,
@@ -1144,7 +1331,8 @@ import_IBD <- function(folder=NULL,
 #' score of 2.97 or 3.01 would both be rounded to a dosage of 3, while 2.87 would be deemed too far from an integer score, and would be made missing.
 #' If you find the output contains too many missing values, a possibility would be to increase the \code{rounding_error}. However this may
 #' also introduce more errors in the output! 
-#' @param min_error_prior Suggestion for a suitably high error prior to be used in IBD calculations to ensure IBD smoothing is achieved
+#' @param min_error_prior Suggestion for a suitably high error prior to be used in IBD calculations to ensure IBD smoothing is achieved. If IBD probabilities were estimated 
+#' with a smaller error prior, the function aborts.
 #' @param verbose Should messages be written to standard output?
 #' @examples
 #' \dontrun{
@@ -1158,7 +1346,7 @@ impute_dosages <- function(IBD_list,
                            parent1 = "P1",
                            parent2 = "P2",
                            rounding_error = 0.05,
-                           min_error_prior = 0.5,
+                           min_error_prior = 0.1,
                            verbose = TRUE
 ){
   IBD_list <- test_IBD_list(IBD_list)
@@ -2211,14 +2399,9 @@ plotRecLS <- function(recombination_data,
 #' @param trait.ID The colname of \code{Phenotype.df} that contains the response variable to use in the model
 #' @param block The blocking factor to be used, if any (must be colname of \code{Phenotype.df}). By default \code{NULL}, in 
 #' which case no blocking structure (for unreplicated experiments)
-#' @param QTL_df A 3-column data frame of previously detected QTLs containing the following columns: column 1 gives linkage 
-#' group identifiers, column 2 specifies the fitted QTL type, i.e. whether the fitted QTL is a "marker" or "position",
-#' and column 3 gives the marker/position IDs of the fitted QTL. If not specified, an error results.
-#' @param folder If markers are to be used as fitted QTL and TetraOrigin was used for IBD estimation, the path to the folder 
-#' in which the imported IBD probabilities is contained can be provided here. By default this is \code{NULL}, if files are in working directory.
-#' @param filename.short If a fitted QTL is a specific marker and TetraOrign was used for IBD estimation, the shortened stem of the filename
-#' of the \code{.csv} files containing the output of TetraOrigin, i.e. without the tail "_LinkageGroupX_Summary.csv" which is 
-#' added by default to all output of TetraOrigin.
+#' @param QTL_df A 2-column data frame of previously-detected QTL; column 1 gives linkage group identifiers, 
+#' column 2 specifies the cM position of the QTL. If not specified, an error results. It can be convenient to generate a compatible
+#' data.frame by first running the function \code{\link{check_cofactors}} to build a multi-QTL model.
 #' @param prop_Pheno_rep The minimum proportion of phenotypes represented across blocks. If less than this, the individual is 
 #' removed from the analysis. If there is incomplete data, the missing phenotypes are imputed using the mean values across the recorded observations.
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
@@ -2231,7 +2414,7 @@ plotRecLS <- function(recombination_data,
 #'     Phenotype.df = Phenotypes_4x,
 #'     genotype.ID = "geno",trait.ID = "pheno",
 #'     block = "year",
-#'     QTL_df = data.frame(LG=1,type="position",id=12.3))
+#'     QTL_df = data.frame(LG=1,cM=12.3))
 #' @export
 PVE <- function(IBD_list,
                 Phenotype.df,
@@ -2239,8 +2422,6 @@ PVE <- function(IBD_list,
                 trait.ID,
                 block = NULL,
                 QTL_df = NULL,
-                folder = NULL,
-                filename.short,
                 prop_Pheno_rep = 0.5,
                 log = NULL,
                 verbose = FALSE){
@@ -2279,10 +2460,6 @@ PVE <- function(IBD_list,
   if(IBDtype == "genotypeIBD"){
     if(IBD_list[[1]]$method == "hmm_TO"){
       ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      
       GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
       Nstates <- nrow(GenCodes)
       indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
@@ -2469,8 +2646,6 @@ PVE <- function(IBD_list,
   if(popSize < ploidy + ploidy2) stop("Insufficient population size to fit QTL model with IBD probabilities. Suggest to use single marker approach")
   if(popSize <= 2*(ploidy + ploidy2)) warning("Population size may be too small for accurate model fitting. Results should be interpreted with caution.")
   
-  # lm0form <- "Pheno ~ 1"
-  # lm0Dat <- as.data.frame(pheno)
   
   lm0form <- "Pheno ~ 1"
   lm0Dat <- as.data.frame(pheno)
@@ -2483,64 +2658,26 @@ PVE <- function(IBD_list,
   
   QTLmodel.list <- lapply(1:nrow(QTL_df), function(n) combn(1:nrow(QTL_df),n))
   
-  PVE.list <- lapply(QTLmodel.list, function(q_mat){
+  PVE.list <- lapply(QTLmodel.list, function(q_mat = QTLmodel.list[[1]]){
     Qmodels <- setNames(apply(q_mat,2,function(sub_q){
       cof.mat <- do.call("cbind",lapply(sub_q, function(l) {
-        
         lg <- QTL_df[l,1]
-        
-        if(QTL_df[l,2] == "marker"){
+        temp.IBD <- IBD_list[[lg]]$IBDarray
+        map <- IBD_list[[lg]]$map
           
-          if(IBDtype == "genotypeIBD"){
-            if(!is.null(folder)) {
-              path.to.file <- file.path(folder,paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv"))
-            } else {
-              path.to.file <- paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv")
-            }
-            
-            suppressWarnings(input_lines <- readLines(path.to.file))
-            placeholders <- grep("inferTetraOrigin-Summary",input_lines)
-            genotypeProbs <- read.csv(path.to.file,
-                                      skip = placeholders[7],
-                                      nrows = (placeholders[8] - placeholders[7] - 2),
-                                      stringsAsFactor=FALSE,header = TRUE)[-1,]
-            
-            genoLabels <- sapply(1:nrow(genotypeProbs), function(r) strsplit(genotypeProbs[r,1],"_g")[[1]][1])
-            
-            temp <- genotypeProbs[genoLabels %in% phenoGeno,as.character(QTL_df[l,3]),drop=FALSE]
-            ## Convert this into haplotype probabilities directly:
-            out <- t(sapply(1:(nrow(temp)/Nstates),function(n) t(temp[(Nstates*(n-1)+1):(Nstates*n),,drop=FALSE])%*%indicatorMatrix))
-          } else{
-            stop("Unable to process - please specify the marker position instead")
-          }
-          
-          
-        } else{ #the co-factor is a IBD'd position, not a specific marker
-          
-          temp.IBD <- IBD_list[[lg]]$IBDarray
-          map <- IBD_list[[lg]]$map
-          
-          if(is.null(gap)){
-            if(!as.character(QTL_df[l,3]) %in% dimnames(temp.IBD)[[1]]){
-              
-              if(!is.numeric(QTL_df[l,3])) stop("If co-factor is specified as a 'position', please use its precise cM position, or (in case no splines were fitted) exact marker name!")
-              
-              ## Try to find where the co-factor should fit:
-              minpos <- which.min(abs(QTL_df[l,3] - map$position))
+          if(is.null(gap)){ #no splines were fitted..
+              ## Try to find where the QTL should fit:
+              minpos <- which.min(abs(QTL_df[l,2] - map$position))
               tempIBD <- t(temp.IBD[minpos,,phenoGeno])
               
-              if(min(abs(QTL_df[l,3] - map$position)) > 0)
-                warning(paste(as.character(QTL_df[l,3]),
-                              "does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
+              if(min(abs(QTL_df[l,2] - map$position)) > 0)
+                
+                warning(paste(QTL_df[l,2],"does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
               
-            } else{
-              tempIBD <- t(temp.IBD[as.character(QTL_df[l,3]),,phenoGeno])
-            }
           } else{
-            tempIBD <- t(temp.IBD[paste0("cM",as.character(QTL_df[l,3])),,phenoGeno])
+            tempIBD <- t(temp.IBD[paste0("cM",as.character(QTL_df[l,2])),,phenoGeno])
           }
-          
-          
+        
           if(IBDtype == "haplotypeIBD"){
             out <- tempIBD
           } else{
@@ -2548,7 +2685,6 @@ PVE <- function(IBD_list,
           }
           ## Exert boundary condition:
           out <- out[,setdiff(1:(ploidy + ploidy2),c(1,ploidy + 1))]
-        }
         
         ## Need to concatenate if there are blocks:
         out.bl <- do.call(rbind, lapply(1:nr.block, function(x) out))
@@ -2559,11 +2695,6 @@ PVE <- function(IBD_list,
       colnames(cof.mat) <- paste0("C",1:ncol(cof.mat)) #Give them colnames so we can use them in model.
       if(any(is.na(cof.mat))) cof.mat[is.na(cof.mat)] <- 0
       
-      # ## Overwrite Null model again
-      # lm0form <- "Pheno ~ 1"
-      # lm0Dat <- as.data.frame(pheno)
-      # 
-      # if(blockTF) lm0form <- "Pheno ~ Block"
       
       lm0form <- as.formula(paste(c(lm0form, paste(colnames(cof.mat), collapse = " + ")), collapse = " + "))
       lm0Dat <- as.data.frame(cbind(pheno,cof.mat))
@@ -2591,8 +2722,7 @@ PVE <- function(IBD_list,
 #' @param genotype.ID The colname of \code{Phenotype.df} that contains the offspring identifiers (F1 names)
 #' @param trait.ID The colname of \code{Phenotype.df} that contains the response variable to use in the model
 #' @param block The blocking factor to be used, if any (must be colname of \code{Phenotype.df}). By default \code{NULL}, in which case no blocking structure (for unreplicated experiments)
-#' @param cofactor_df A 3-column data frame of co-factor(s); column 1 gives linkage group identifiers, column 2 specifies the co-factor type, i.e. whether the co-factor is a "marker" or "position",
-#' and column 3 gives the marker/position IDs of the co-factors. By default \code{NULL}, in which case no co-factors are included in the analysis.
+#' @param cofactor_df A 2-column data frame of co-factor(s); column 1 gives linkage group identifiers, column 2 specifies the cM position of the co-factors. By default \code{NULL}, in which case no co-factors are included in the analysis.
 #' @param folder If markers are to be used as co-factors, the path to the folder in which the imported IBD probabilities is contained can be provided here. By default this is \code{NULL}, if files are in working directory.
 #' @param filename.short If TetraOrigin was used and co-factors are being included, the shortened stem of the filename of the \code{.csv} files containing the output of TetraOrigin, i.e. without the tail "_LinkageGroupX_Summary.csv" which is added by default to all output of TetraOrigin.
 #' @param prop_Pheno_rep The minimum proportion of phenotypes represented across blocks. If less than this, the individual is removed from the analysis. If there is incomplete
@@ -2604,6 +2734,7 @@ PVE <- function(IBD_list,
 #' @param gamma The width of the confidence intervals used around the permutation test threshold using the approach of Nettleton & Doerge (2000), by default 0.05.
 #' @param ncores Number of cores to use if parallel computing is required. Works both for Windows and UNIX (using \code{doParallel}).
 #' Use \code{parallel::detectCores()} to find out how many cores you have available.
+#' @param verbose Logical, by default \code{TRUE}. Should messages be printed during running?
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @param \dots Arguments passed to \code{\link{plot}}
 #' @return
@@ -2645,6 +2776,7 @@ QTLscan <- function(IBD_list,
                     gamma = 0.05,
                     ncores = 1,
                     log = NULL,
+                    verbose = TRUE,
                     ...){
   
   IBD_list <- test_IBD_list(IBD_list)
@@ -2664,6 +2796,7 @@ QTLscan <- function(IBD_list,
                         N_perm = N_perm.max,
                         alpha = alpha,
                         ncores = ncores,
+                        verbose = verbose,
                         log = log))
     
   } else {
@@ -2743,7 +2876,7 @@ QTLscan <- function(IBD_list,
       dimnames(IBDarray)[[3]],
       unique(Phenotype.df[,genotype.ID]))
     
-    write(paste("There are",length(phenoGeno0),"individuals with matching identifiers between phenotypic and genotypic datasets.\n"),log.conn)
+    if(verbose) write(paste("There are",length(phenoGeno0),"individuals with matching identifiers between phenotypic and genotypic datasets.\n"),log.conn)
     
     nr.block <- 1 #there is always 1 block...
     
@@ -2891,57 +3024,58 @@ QTLscan <- function(IBD_list,
     if(cofactTF){
       cof.mat <- do.call("cbind",lapply(1:nrow(cofactor_df), function(l) {
         # message(l)
+        
         lg <- cofactor_df[l,1]
         
-        if(cofactor_df[l,2] == "marker"){
+        # if(cofactor_df[l,2] == "marker"){
+        #   
+        #   if(IBDtype == "genotypeIBD"){
+        #     if(!is.null(folder)) {
+        #       path.to.file <- file.path(folder,paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv"))
+        #     } else {
+        #       path.to.file <- paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv")
+        #     }
+        #     
+        #     suppressWarnings(input_lines <- readLines(path.to.file))
+        #     placeholders <- grep("inferTetraOrigin-Summary",input_lines)
+        #     genotypeProbs <- read.csv(path.to.file,
+        #                               skip = placeholders[7],
+        #                               nrows = (placeholders[8] - placeholders[7] - 2),
+        #                               stringsAsFactor=FALSE,header = TRUE)[-1,]
+        #     
+        #     genoLabels <- sapply(1:nrow(genotypeProbs), function(r) strsplit(genotypeProbs[r,1],"_g")[[1]][1])
+        #     
+        #     temp <- genotypeProbs[genoLabels %in% phenoGeno,as.character(cofactor_df[l,3]),drop=FALSE]
+        #     ## Convert this into haplotype probabilities directly:
+        #     out <- t(sapply(1:(nrow(temp)/Nstates),function(n) t(temp[(Nstates*(n-1)+1):(Nstates*n),,drop=FALSE])%*%indicatorMatrix))
+        #   } else{
+        #     stop("Unable to process - please specify the marker position instead")
+        #   }
+        #   
+        #   
+        # } else{ #the co-factor is a IBD'd position, not a specific marker
           
-          if(IBDtype == "genotypeIBD"){
-            if(!is.null(folder)) {
-              path.to.file <- file.path(folder,paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv"))
-            } else {
-              path.to.file <- paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv")
-            }
-            
-            suppressWarnings(input_lines <- readLines(path.to.file))
-            placeholders <- grep("inferTetraOrigin-Summary",input_lines)
-            genotypeProbs <- read.csv(path.to.file,
-                                      skip = placeholders[7],
-                                      nrows = (placeholders[8] - placeholders[7] - 2),
-                                      stringsAsFactor=FALSE,header = TRUE)[-1,]
-            
-            genoLabels <- sapply(1:nrow(genotypeProbs), function(r) strsplit(genotypeProbs[r,1],"_g")[[1]][1])
-            
-            temp <- genotypeProbs[genoLabels %in% phenoGeno,as.character(cofactor_df[l,3]),drop=FALSE]
-            ## Convert this into haplotype probabilities directly:
-            out <- t(sapply(1:(nrow(temp)/Nstates),function(n) t(temp[(Nstates*(n-1)+1):(Nstates*n),,drop=FALSE])%*%indicatorMatrix))
-          } else{
-            stop("Unable to process - please specify the marker position instead")
-          }
+        temp.IBD <- IBD_list[[lg]]$IBDarray
+        map <- IBD_list[[lg]]$map
           
-          
-        } else{ #the co-factor is a IBD'd position, not a specific marker
-          
-          temp.IBD <- IBD_list[[lg]]$IBDarray
-          map <- IBD_list[[lg]]$map
-          
-          if(is.null(gap)){
-            if(!as.character(cofactor_df[l,3]) %in% dimnames(temp.IBD)[[1]]){
+        if(is.null(gap)){
+            if(!as.character(cofactor_df[l,2]) %in% dimnames(temp.IBD)[[1]]){
               
-              if(!is.numeric(cofactor_df[l,3])) stop("If co-factor is specified as a 'position', please use its precise cM position, or (in case no splines were fitted) exact marker name!")
+              # if(!is.numeric(cofactor_df[l,2])) stop("If co-factor is specified as a 'position', please use its precise cM position, or (in case no splines were fitted) exact marker name!")
               
               ## Try to find where the co-factor should fit:
-              minpos <- which.min(abs(cofactor_df[l,3] - map$position))
+              minpos <- which.min(abs(cofactor_df[l,2] - map$position))
               tempIBD <- t(temp.IBD[minpos,,phenoGeno])
               
-              if(min(abs(cofactor_df[l,3] - map$position)) > 0)
-                warning(paste(as.character(cofactor_df[l,3]),
+              if(min(abs(cofactor_df[l,2] - map$position)) > 0)
+                warning(paste(as.character(cofactor_df[l,2]),
                               "does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
               
             } else{
-              tempIBD <- t(temp.IBD[as.character(cofactor_df[l,3]),,phenoGeno])
+              tempIBD <- t(temp.IBD[as.character(cofactor_df[l,2]),,phenoGeno])
             }
           } else{
-            tempIBD <- t(temp.IBD[paste0("cM",as.character(cofactor_df[l,3])),,phenoGeno])
+            tempIBD <- t(temp.IBD[paste0("cM",as.character(cofactor_df[l,2])),,phenoGeno])
           }
           
           
@@ -2950,7 +3084,7 @@ QTLscan <- function(IBD_list,
           } else{
             out <- tempIBD %*% indicatorMatrix
           }
-        }
+        # }
         
         ## Need to concatenate if there are blocks:
         out.bl <- do.call(rbind, lapply(1:nr.block, function(x) out))
@@ -2981,7 +3115,7 @@ QTLscan <- function(IBD_list,
     ## Save the residuals from this model for further analysis:
     resid.pheno <- lm0Res$residuals
     
-    write(paste("\nRunning QTL analysis with",popSize,"individuals...\n"),log.conn)
+    if(verbose) write(paste("\nRunning QTL analysis with",popSize,"individuals...\n"),log.conn)
     
     if(length(IBD_list) > 1){
       IBDprobs <- abind::abind(lapply(seq(length(IBD_list)), function(i) IBD_list[[i]]$IBDarray[,,phenoGeno]),
@@ -3049,7 +3183,7 @@ QTLscan <- function(IBD_list,
     rownames(output) <- NULL
     
     if(perm_test){
-      message("Running permutation test....")
+      if(verbose) message("Running permutation test....")
       time_start <- Sys.time()
       
       Nran <- Nmin <- ceiling(5/alpha) #The starting number of permutations. Nran is placeholder for number of perm ran

@@ -106,7 +106,7 @@ All functions within `polyqtlR` for estimating or importing IBD probabilities wi
 <a name="hmm"></a>
 
 ### HMM for IBD estimation
-The `estimate_IBD` function of `polyqtlR` with the default setting `method = "hmm"` estimates offspring IBD probabilities using a Hidden Markov Model (HMM) proposed by Zheng et al [@Zheng2016] but generalised here to multiple ploidy levels. Currently, diploid (2x), triploid (3x = 4x $\times$ 2x), tetraploid (4x) and hexaploid (6x) populations are handled. `genotypes` can either be discrete (*i.e.* integer marker dosage scores), or probabilistic (*i.e.* the probabilities of each of the ploidy + 1 possible scores). For tetraploids and hexaploids, the possibility of incorporating double reduction [@Bourke2015] (*i.e.* allowing for the phenomenon of multivalent pairing) is available, although this can have serious performance implications for hexaploids (and in hexaploids, the option of allowing multivalent pairing in *both* parents for the same chromosome is by default disabled as it requires very high RAM requirements (> 32 Gb). Use argument `full_multivalent_hexa = TRUE` to allow multivalents simultaneously at the same position from both hexaploid parents). 
+The `estimate_IBD` function of `polyqtlR` with the default setting `method = "hmm"` estimates offspring IBD probabilities using a Hidden Markov Model (HMM) developed by Zheng et al [@Zheng2016] in the TetraOrigin package but generalised in `polyqtlR` to multiple ploidy levels. Currently, diploid (2x), triploid (3x = 4x $\times$ 2x), tetraploid (4x) and hexaploid (6x) populations are handled. `genotypes` can either be discrete (*i.e.* integer marker dosage scores), or probabilistic (*i.e.* the probabilities of each of the ploidy + 1 possible scores). For triploids, tetraploids and hexaploids, the possibility of incorporating double reduction [@Bourke2015] (*i.e.* allowing for the phenomenon of multivalent pairing) is available, although this can have serious performance implications for hexaploids (and in hexaploids, the option of allowing multivalent pairing in *both* parents for the same chromosome is by default disabled as it requires very high RAM requirements (> 32 Gb). Use argument `full_multivalent_hexa = TRUE` to allow multivalents simultaneously at the same position from both hexaploid parents). 
 
 Some of the code used to estimate these IBD probabilities has been programmed in C++ to improve performance, and relies on both the `Rcpp` and `RcppArmadillo` packages to provide the interface between R, C++ and the Armadillo C++ library.
 
@@ -132,20 +132,10 @@ nc <- parallel::detectCores() - 1
 nc <- 2 #to pass CRAN checks
 ```
 
-### "Heuristic" method for IBD estimation
-In cases where the results are needed quickly, or where there are very large numbers of markers, or for ploidy levels above 6, it is convenient to use the heuristic approach to IBD estimation. We do this using the `estimate_IBD` function as follows:
+#### *Optional*: Importing IBDs from TetraOrigin
+If so desired, the original TetraOrigin package can be used to estimate IBD probabilities (again using a Hidden Markov Model) rather than using the `estimate_IBD` function. The results should be identical for tetraploids, while `polyqtlR` also offers the flexibility of handling multiple ploidy levels (2x, 3x, 4x and 6x).
 
-```{r eval=FALSE}
-IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
-                       genotypes = SNP_dosages.4x,
-                       method = "heur",
-                       ploidy = 4)
-```
-
-Note that the attribute `IBDtype` is now `haplotypeIBD`, referring to the fact that these IBDs are the probabilities of inheriting each parental haplotype at a locus, as opposed to the probabilities of inheriting particular combinations of parental alleles at a locus (`genotypeIBD`). Although similar, certain downstream functions such as `exploreQTL` can only work with the former (although you will still be able to visualise QTL allele effects with the `visualiseQTL` function). The accuracy of these IBDs is generally *lower* than if `method = "hmm"` had been used (and therefore the power of subsequent QTL analyses will be somewhat reduced). 
-
-### Importing IBDs from TetraOrigin
-TetraOrigin produces by default a large .txt output file after running the function "inferTetraOrigin". However, it is convenient to produce a summary of this output using the "saveAsSummaryITO" function, which produces a .csv file summarising the results. Information on how to use TetraOrigin is provided with the package itself, downloadable from [GitHub](https://github.com/chaozhi/TetraOrigin). In particular, the software offers users the option of estimating IBDs under the assumption of bivalent pairing or also allowing for multivalents during meiosis. In general, allowing for multivalents offers a more complete description of autopolyploid meiosis, but it does not make a large difference to the final QTL results which model is used [@Bourke2019]. 
+TetraOrigin produces by default a large .txt output file after running the function "inferTetraOrigin". However, it is convenient to produce a summary of this output using the "saveAsSummaryITO" function, which produces a .csv file summarising the results. Information on how to use TetraOrigin is provided with the package itself, downloadable from [GitHub](https://github.com/chaozhi/TetraOrigin). 
 
 The function `import_IBD` imports the .csv output of TetraOrigin::saveAsSummaryITO. It takes a number of arguments, such as `folder`, which is the folder containing the output of TetraOrigin. For example, if we wanted to import IBDs from the folder "TetraOrigin" for a species with 5 linkage groups, we would run the following:
 
@@ -163,7 +153,21 @@ Importing IBD data under description inferTetraOrigin-Summary,Conditonal genotyp
 ```
 
 
-#### High marker densities
+### "Heuristic" method for IBD estimation
+In cases where the results are needed quickly, or where there are very large numbers of markers, or for ploidy levels above 6, it is convenient to use the heuristic approach to IBD estimation. We do this using the `estimate_IBD` function as follows:
+
+```{r eval=FALSE}
+IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
+                       genotypes = SNP_dosages.4x,
+                       method = "heur",
+                       ploidy = 4)
+```
+
+Note that the attribute `IBDtype` is now `haplotypeIBD`, referring to the fact that these IBDs are the probabilities of inheriting each parental haplotype at a locus, as opposed to the probabilities of inheriting particular combinations of parental alleles at a locus (`genotypeIBD`). Although similar, certain downstream functions such as `exploreQTL` can only work with the former (although you will still be able to visualise QTL allele effects with the `visualiseQTL` function). The accuracy of these IBDs is generally *lower* than if `method = "hmm"` had been used (and therefore the power of subsequent QTL analyses will be somewhat reduced). 
+
+
+
+### High marker densities
 Particularly at higher ploidy levels (6x), it becomes computationally expensive to estimate IBDs using the `hmm` method. Our experience has shown that for hexaploids with a mapping population size of 400 or more individuals running on 4 cores, about 200 - 300 markers per chromosome can be accommodated on an "above-average" desktop computer (16 GB RAM). Running on a single core will reduce the committed memory, but the evaluation time will therefore be much longer. 250 markers per chromosome should be already enough to estimate IBDs with high accuracy - including extra markers over this amount will add incrementally less information (following the law of diminishing returns).
 
 The function `thinmap` can be used to make a selection of markers that tries to maximise their distribution across the genome and across parental homologues. The argument `bin_size` is used to specify the size of the bins in which markers are selected - increasing this results in fewer markers being used. The ideal `bin_size` is 1 cM, although at higher ploidies and with higher marker densities, wider bins may be needed. The function is called as follows:
@@ -339,7 +343,7 @@ plotLinearQTL(LOD_data = qtl_LODs.4x,
               col = "dodgerblue")
 ```
 
-However, if you ran this step you will have noticed that it is quite slow. Therefore, it is recommended to first estimate a mean phenotypic value per individual before running the permutation test, which we do here using best linear unbiased estimates in the `nlme` package which fits a linear mixed model with genotype as fixed effect.
+However, if you ran this step you will have noticed that it is quite slow. Therefore, it is recommended to first estimate a mean phenotypic value per individual over years before running the permutation test, which we do here using best linear unbiased estimates in the `nlme` package which fits a linear mixed model with genotype as fixed effect.
 
 <a name="blue"></a>
 
@@ -379,9 +383,12 @@ plotLinearQTL(LOD_data = qtl_LODs.4x,
 Note that the LOD scores have now increased, but the significance threshold has also increased. This has to do with how the LOD score is estimated, using a ratio of the RSS from your fitted model at a putative QTL position with that of the NULL model with no QTL. In the case of blocks, the NULL model already contains your blocking term, and so a portion of the phenotypic variance is already accounted for when calculating the LOD score. When using BLUEs as your phenotype, you first correct your phenotypes for block effects, but the NULL model now has no explanatory variables, which artificially inflates your LODs. However, a permutation test will account for these sorts of discrepancies, and the region of the genome that lies above the threshold should be the same. 
 
 ### Adding genetic co-factors
-In many situations we may wish to include already-identified QTL positions as fixed genetic effects in a QTL search. This can help to reduce the amount of unwanted background variance in the phenotypic data which can lead to greater power to detect QTL at other positions. Another possible reason could be to test whether multiple peaks on a single linkage group are independent. We can run a co-factor analysis using `QTLscan`  by specifying the `cofactor_df` argument. To this we supply a data-frame with three columns, namely "LG", "type", and "ID" (although column identifiers are not mandatory). 
+In many situations we may wish to include already-identified QTL positions as fixed genetic effects in a QTL search. This can help to reduce the amount of unwanted background variance in the phenotypic data which can lead to greater power to detect QTL at other positions. Another possible reason could be to test whether multiple peaks on a single linkage group are independent. There are two options for including co-factors in the package. We could use the automated function `check_cofactors` which performs all steps automatically, or we can run a manual co-factor analysis using `QTLscan`  by specifying the `cofactor_df` argument. 
 
-Before we add the QTL peak as a co-factor, we need to know where it is. We know it is on LG1, and has a LOD value above 12 (here, using the BLUEs results). We search for the peak as follows:
+#### Manual co-factor analysis
+We first describe the manual approach using `QTLscan` directly, as this clearly demonstrates how co-factors can be included, and offers the most flexibility. To this we supply a data-frame with two columns, the first one giving the linkage group identifier and the second column giving the cM position (note that column identifiers are not mandatory, the function looks for LG in column 1 and cM in column 2 by itself). 
+
+Before we add the QTL peak as a co-factor, we need to know where it is. We search for the peak as follows:
 
 ```{r}
 findPeak(qtl_LODs.4x, linkage_group = 1)
@@ -395,8 +402,7 @@ qtl_LODs.4x_cofactor <- QTLscan(IBD_list = IBD_4x,
                                 trait.ID = "pheno",
                                 block = "year",
                                 cofactor_df = data.frame("LG" = 1,
-                                                         "type" = "position",
-                                                         "ID" = 12.3),
+                                                         "cM" = 12.3),
                                 perm_test = FALSE,
                                 ncores = nc)#nc is the number of cores, defined earlier
 ```
@@ -445,6 +451,48 @@ plotLinearQTL(LOD_data = qtl_LODs.4x_cofactor,
 Note that if we wanted to include multiple co-factors, we could do this by supplying a data-frame with multiple rows in `cofactor_df`. As before, check out `?QTLscan` for full details. 
 
 <a name="overlaycofactorplot"></a>
+
+#### Automatic co-factor analysis
+A useful alternative to a manual co-factor analysis is to use an automatic co-factor analysis which attempts to build a multi-QTL model by maximising the signficance at all detected QTL peaks. To use this function, we first estimate BLUEs over blocks, and then run the `check_cofactors` function as follows:
+
+```{r eval = FALSE}
+blues <- BLUE(data = Phenotypes_4x,
+              model = pheno~geno,
+              random = ~1|year,
+              genotype.ID = "geno")
+
+QTLmodel <- check_cofactors(IBD_list = IBD_4x,
+                                    Phenotype.df = blues,
+                                    genotype.ID = "geno",
+                                    trait.ID = "blue",
+                                    LOD_data = qtl_LODs.4x,
+                                    ncores = nc)
+
+
+QTLmodel
+```
+
+```{r echo = FALSE}
+blues <- BLUE(data = Phenotypes_4x,
+              model = pheno~geno,
+              random = ~1|year,
+              genotype.ID = "geno")
+QTLmodel <- readRDS(file = "QTLmodel.RDS")
+QTLmodel
+```
+
+The output gives 4 columns: the LG of the QTL, its cM position, the difference between the LOD at the peak and the significance threshold (ie. a threshold-adjusted LOD score) and the CofactorID. Note that the last one is `NA` in our case, as this QTL peak was detected without including any other genetic co-factor in the model. For more details refer as usual to the help documentation `?check_cofactors`.
+
+It can be useful to directly run the `PVE` function after this to look at the percentage variance explained of the QTL model and all sub-models (note that this function is also presented in its own separate section [later](#pve). The output of `check_cofactors` can be passed directly to `PVE`:
+
+```{r}
+PVE(IBD_list = IBD_4x,
+    Phenotype.df = blues,
+    genotype.ID = "geno",
+    trait.ID = "blue",
+    QTL_df = QTLmodel)
+```
+
 
 ### Comparing multiple analyses
 It is often convenient to plot the results of different analyses together. For example comparing the results of a single marker analysis with an IBD-based approach, or plotting an initial QTL scan versus the results when a set of genetic co-factors were also included. Both the `plotQTL` and `plotLinearQTL` functions have an argument `overlay`, which, if set to `TRUE`, overlays plots on the previous plotting window, allowing multiple layers to be built on top of each other.
@@ -593,7 +641,7 @@ PVE(IBD_list = IBD_4x,
                 genotype.ID = "geno",
                 trait.ID = "pheno",
                 block = "year",
-                QTL_df = data.frame("LG" = 1,"type" = "position","id" = 12.3))
+                QTL_df = data.frame("LG" = 1,"cM" = 12.3))
 ```
 
 <a name="sect9"></a>
