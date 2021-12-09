@@ -220,7 +220,10 @@ check_cofactors <- function(IBD_list,
     outputQTL <- refinedQTL
   }
   
-  rownames(outputQTL) <- NULL #tidy up
+  rownames(outputQTL) <-  paste0("Q",1:nrow(outputQTL))
+  
+  ## Add a column of QTL numbers (linking with PVE function numbering)
+  # outputQTL$QTL <- paste0("Q",1:nrow(outputQTL))
   
   return(outputQTL)
   
@@ -301,7 +304,9 @@ count_recombinations <- function(IBD_list,
     nind <- dim(IBD_list[[ch]]$IBDarray)[3]
     
     if(!bivalent_decoding){
-      ML <- IBD_list[[ch]]$marginal.likelihood
+      # ML <- IBD_list[[ch]]$marginal.likelihood
+      ML <- sapply(unname(IBD_list[[ch]]$marginal.likelihood),function(x) setNames(max(x),rownames(x)[which.max(x)]))
+      
       f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
       if(length(which(f1ok)) == 0) stop(paste("Cannot proceed on LG",ch,"- no offspring predicted from bivalent-only meioses!"))
     } else{
@@ -1319,10 +1324,12 @@ import_IBD <- function(folder=NULL,
 
 #' Re-estimate marker dosages given IBD input estimated using a high error prior.
 #' @description Function to correct marker dosage scores given a list of previously estimated IBD probabilities. This may
-#' prove useful to correct genotyping errors. Running the \code{\link{estimate_IBD}} function with a high error prior (e.g. 0.6) will 
+#' prove useful to correct genotyping errors. Running the \code{\link{estimate_IBD}} function with a high error prior will 
 #' result in suppressed predictions of double recombination events, associated with genotyping errors. By forcing the HMM to penalise 
 #' double recombinations heavily, a smoothed haplotype landscape is achieved in which individual genotype observations are down-weighted. 
 #' This smoothed output is then used to re-estimate marker dosages, dependent on (correct) parental scores. 
+#' An alternative strategy is to use the function \code{\link{maxL_IBD}} over a range of error priors first, and use the resulting \code{$maxL_IBD} output 
+#' as input here (as the \code{IBD_list}). In this case, set the argument \code{min_error_prior} to a low value (0.005 say) to avoid issues. 
 #' @param IBD_list List of IBD probabilities
 #' @param dosage_matrix An integer matrix with markers in rows and individuals in columns. Note that probabilistic genotypes are not currently catered for here.
 #' @param parent1 The identifier of parent 1, by default "P1"
@@ -1482,15 +1489,106 @@ impute_dosages <- function(IBD_list,
   return(new.dosages)
 } #impute_dosages
 
+#' Wrapper function to run estimate_IBD function over multiple error priors
+#' @description Function to run the \code{\link{estimate_IBD}} function over a range of possible error priors. The function returns
+#' a merged set of results that maximise the marginal likelihood per individual, i.e. allowing a per-individual error rate within the options
+#' provided in the errors argument.
+#' @param errors Vector of offspring error priors to test (each between 0 and 1)
+#' @param \dots Arguments passed to \code{\link{estimate_IBD}}. 
+#' @return A list containing the following components:
+#' \itemize{
+#' \item{maxL_IBD : }{ A nested list as would have been returned by the estimate_IBD function, but composite across error priors to maximise the 
+#' marginal likelihoods. Note that the $error values per linkage group are now the average error prior across the population per linkage group}
+#' \item{MML : }{ A 3d array of the maximal marginal likelihoods, per error prior. Dimensions are individuals, linkage groups, error priors.}
+#' \item{errors : }{ The error priors used (i.e. the input vector is returned for later reference.)}
+#' }
+#' @examples
+#' \dontrun{
+#' data("phased_maplist.4x","SNP_dosages.4x")
+#' maxL_IBD(phased_maplist=phased_maplist.4x,genotypes=SNP_dosages.4x,
+#' ploidy=4,errors=c(0.01,0.02,0.05,0.1))
+#' }
+#' @export
+maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2), 
+                     ...){
+  
+  chkargs <- list(...)
+  
+  if("error" %in% names(chkargs)) stop("Cannot specify argument error in this function, use
+                                       argument 'errors' instead")
+  if("method" %in% names(chkargs)){
+    if(chkargs$method != "hmm") stop("This function only operates using method = 'hmm' (default)")
+  }
+  
+  if(!all(sapply(errors,is.numeric))) stop("errors must be a vector of numeric values")
+  if(length(errors) < 2) stop("At least two error priors are required for this function")
+  if(any(errors <= 0) | any(errors >= 1)) stop("errors should be numeric in range (0,1)")
+  
+  IBD.list <- setNames(lapply(errors, function(er){
+    estimate_IBD(error = er,...)
+  }),paste0("e_",errors))
+  
+  # extract maximal marginal likelihoods per error prior:
+  n.ind <- length(IBD.list[[1]]$LG1$offspring)
+  mml.arr <- array(0,dim = c(n.ind,
+                             length(IBD.list[[1]]),
+                             length(errors)),
+                   dimnames = list(IBD.list[[1]]$LG1$offspring,
+                                   names(IBD.list[[1]]),
+                                   paste0("e_",errors)
+                   ))
+  
+  for(i in 1:length(errors)){
+    mml.arr[,,i] <- sapply(IBD.list[[i]], function(x) sapply(x$marginal.likelihoods,max))
+  }
+  
+  ## Generate a new IBD array composed of the values that maximise mml across error priors:
+  IBDout <- setNames(lapply(1:length(IBD.list[[1]]), function(i){
+    ## create a temporary template list, copied from the first error prior:
+    temp <- IBD.list[[1]][[i]]
+    
+    ## get error priors that maximises max-mar-L for each individuals:
+    max_mml <- apply(mml.arr[,i,],1,which.max)
+    
+    ## record the mean as approximate error prior for this LG:
+    temp$error <- round(mean(errors[max_mml]),3)
+    
+    ## Record the marginal likelihoods of these:
+    temp$marginal.likelihoods <- setNames(lapply(1:n.ind,function(n){
+      IBD.list[[max_mml[n]]][[i]]$marginal.likelihoods[[n]]
+    }),
+    temp$offspring)
+    
+    ## Create an array with the correct entries, merging over max_mml as before:
+    for(n in 1:n.ind){
+      temp$IBDarray[,,n] <- IBD.list[[max_mml[n]]][[i]]$IBDarray[,,n]
+    }
+    
+    temp$valency <- sapply(1:n.ind, function(n) IBD.list[[max_mml[n]]][[i]]$valency[n])
+    
+    temp$pairing <- setNames(lapply(1:n.ind, function(n) IBD.list[[max_mml[n]]][[i]]$pairing[[n]]),
+                             temp$offspring)
+    
+    return(temp)
+  }),
+  names(IBD.list[[1]]))
+  
+  return(list(maxL_IBD = IBDout,
+              MML = mml.arr,
+              errors = errors))
+  
+} #maxL_IBD
+
 #' Generate a 'report' of predicted meiotic behaviour in an F1 population
 #' @description Function to extract the chromosome pairing predictions as estimated by \code{\link{estimate_IBD}}. 
 #' Apart from producing an overview of the pairing during parental meiosis (including counts of multivalents, per linkage group per parent),
 #' the function also applies a simple chi-squared test to look for evidence of non-random pairing behaviour from the bivalent counts (deviations from a polysomic model)
 #' @param IBD_list List of IBD probabilities as estimated by \code{\link{estimate_IBD}} using method 'hmm', or externally (e.g. using TetraOrigin)
-#' @param visualise Logical, by default \code{TRUE}, in which case a plot of the pairing results is produced per LG. In order to 
+#' @param visualise Logical, by default \code{FALSE}. If \code{TRUE}, a plot of the pairing results is produced per LG. In order to 
 #' flag extreme deviations from the expected numbers (associated with polysomic inheritance, considered the Null hypothesis),
 #' barplots are coloured according to the level of significance of the X2 test. Plots showing red bars indicate extreme deviations from
 #' a polysomic pattern.
+#' @param plausible_pairing_prob The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
 #' @param precision To how many decimal places should summed probabilities per bivalent pairing be rounded? By default 2. 
 #' @return The function returns a nested list, with one element per linkage group in the same order as the input IBD list.
 #' Per linkage group, a list is returned containing the following components:
@@ -1512,7 +1610,8 @@ impute_dosages <- function(IBD_list,
 #' mr.ls<-meiosis_report(IBD_list = IBD_4x)
 #' @export
 meiosis_report <- function(IBD_list,
-                           visualise = TRUE,
+                           visualise = FALSE,
+                           plausible_pairing_prob = 0.9,
                            precision = 2){
   
   IBD_list <- test_IBD_list(IBD_list)
@@ -1546,9 +1645,13 @@ meiosis_report <- function(IBD_list,
   
   out <- setNames(lapply(seq(length(IBD_list)), function(l){
     
+    maxprobs <- sapply(IBD_list[[l]]$pairing,max)
+    
+    plausible <- which(maxprobs >= plausible_pairing_prob)
+    
     pairing.sums <- setNames(rep(0,length(all.pairings)),all.pairings)
     
-    for(y in IBD_list[[l]]$pairing){
+    for(y in IBD_list[[l]]$pairing[plausible]){
       pairing.sums[names(y)] <- pairing.sums[names(y)] + y
     }
     
@@ -1691,7 +1794,7 @@ meiosis_report <- function(IBD_list,
 #' @param return_plotData Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned,
 #' which can be useful for subsequent plot manipulations and overlays.
 #' @param show_thresh_CI Logical, by default \code{TRUE}. Should confidence interval bounds around LOD threshold be shown?
-#' @param use_LG_names Logical, by default \code{FALSE}. Should original character LG names be used as axis labels, or should numbering be used instead?
+#' @param use_LG_names Logical, by default \code{TRUE}. Should original character LG names be used as axis labels, or should numbering be used instead?
 #' @param axis_label.cex Argument to adjust the size of the axis labels, can be useful if there are many linkage groups to plot
 #' @param custom_LG_names Specify a vector that contains custom linkage group names. By default \code{NULL}
 #' @param LGdiv.col Colour of dividing lines between linkage groups, by default grey.
@@ -1718,7 +1821,7 @@ plotLinearQTL <- function(LOD_data,
                           thresh.col = "darkred",
                           return_plotData = FALSE,
                           show_thresh_CI = TRUE,
-                          use_LG_names = FALSE,
+                          use_LG_names = TRUE,
                           axis_label.cex = 1,
                           custom_LG_names = NULL,
                           LGdiv.col = "gray42",
@@ -1879,6 +1982,7 @@ plotLinearQTL <- function(LOD_data,
 #' argument of function \code{\link{QTLscan}}. This can be useful if genetic co-factor analyses are being compared. 
 #' If no position is to be highlighted, add the corresponding list element as \code{NULL}.
 #' @param LGdiv.col Colour of dividing lines between linkage groups, by default grey.
+#' @param use_LG_names Logical, by default \code{TRUE}. Should original character LG names be used as axis labels, or should numbering be used instead?
 #' @param \dots Arguments passed to \code{\link{lines}} or \code{\link{points}} as appropriate (see argument plot_type).
 #' @return The plot data, if \code{return_plotData = TRUE}, otherwise \code{NULL}
 #' @examples
@@ -1908,6 +2012,7 @@ plotLinearQTL_list <- function(LOD_data.ls,
                                return_plotData = FALSE,
                                highlight_positions = NULL,
                                LGdiv.col = "gray42",
+                               use_LG_names = TRUE,
                                ...){
   ## Check input:
   if(length(plot_type) == 1){
@@ -1932,6 +2037,14 @@ plotLinearQTL_list <- function(LOD_data.ls,
   if(list.depth(LOD_data.ls) != 3) stop("LOD_data.ls input should be a nested list of outputs of the function QTLscan!")
   if(any(sapply(sapply(LOD_data.ls, function(x) x$Perm.res),is.null))) stop("All elements of LOD_data.ls should have a significance threshold. Otherwise, use the plotLinearQTL function with setting overlay = TRUE")
   
+  ## Remove any chromosome 0 data (possible with single marker regression data)
+  LOD_data.ls <-  lapply(seq(length(LOD_data.ls)), function(l) {
+    temp <- LOD_data.ls[[l]]
+    temp$QTL.res <- temp$QTL.res[temp$QTL.res$chromosome != 0,]
+    temp$Map <- temp$Map[temp$Map[,"chromosome"] != 0,]
+    return(temp)
+  })
+  
   LOD_data1 <- LOD_data.ls[[1]] #Use the first list element for most of the default data (cM etc..)
   plotdata1 <- as.data.frame(LOD_data1$QTL.res)
   
@@ -1941,13 +2054,6 @@ plotLinearQTL_list <- function(LOD_data.ls,
   if(n.chms == 1) stop("This function is not appropriate for a single chromosome dataset. Use function plotQTL instead.")
   
   additions <- sapply(1:(n.chms - 1), function(n) sum(chm.lens[1:n]))
-  
-  ## Remove any chromosome 0 data (possible with single marker regression data)
-  LOD_data.ls <-  lapply(seq(length(LOD_data.ls)), function(l) {
-    temp <- LOD_data.ls[[l]]
-    temp$QTL.res <- temp$QTL.res[temp$QTL.res$chromosome != 0,]
-    return(temp)
-  })
   
   add.reps <- lapply(seq(length(LOD_data.ls)), function(ds) c(rep(0,length(which(LOD_data.ls[[ds]]$QTL.res$chromosome == 1))),
                                                               unlist(sapply(2:n.chms, function(n) rep(additions[n-1], 
@@ -2016,6 +2122,7 @@ plotLinearQTL_list <- function(LOD_data.ls,
  
   ## Change the ones with least space above. First find the plot with most space above:
   min.base <- ylimits.ls[[which.min(threshpos)]][1]
+  orig.wmt <- which.min(threshpos)
   
   ## Rescale plot y limits:
   
@@ -2044,7 +2151,15 @@ plotLinearQTL_list <- function(LOD_data.ls,
   plot(NULL, xlim=range(plotdata.ls[[1]]$xposns),ylim = shrink.range(ylimits.ls[[1]]), #ylim gets expanded by plot function
        axes=FALSE,xlab = ifelse(add_xaxis,"Linkage group",""), ylab = "", cex.lab = 1.5) #Add axes labels afterwards
  
-  if(add_xaxis) axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),labels = unique(plotdata1$chromosome))
+  if(add_xaxis) {
+    if(use_LG_names) {
+      xlabs <- LOD_data1$LG_names
+    } else{
+      xlabs <-unique(plotdata1$chromosome)
+    }
+    axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),
+                     labels = xlabs)
+  }
   
   if(add_rug) {
     LOD_data1$Map <- as.data.frame(LOD_data1$Map)
@@ -2055,7 +2170,7 @@ plotLinearQTL_list <- function(LOD_data.ls,
   }
   
   axis(2, las = 1)
-  mtext(text = sig.unit,side = 2,line = 2.5, col = colours[1])
+  mtext(text = sig.unit,side = 2,line = 2.5, col = colours[orig.wmt])
   
   for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = LGdiv.col,lty = 3)
   
@@ -2075,7 +2190,7 @@ plotLinearQTL_list <- function(LOD_data.ls,
 
       } else{
         points(plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"xposns"],
-               plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"LOD"],col = colours[2],...)
+               plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"LOD"],col = colours[j],...)
       }
     }
     
@@ -2289,42 +2404,47 @@ plotRecLS <- function(recombination_data,
     N <- length(recdat) #number of offspring
     
     ## Extract all recombination breakpoints and their probabilities into a 2 column matrix:
-    rec.mat <- do.call(rbind,lapply(1:length(recdat), function(n){
+    rec.mat <- do.call(rbind,lapply(1:N, function(n){
+      # print(n)
       f1 <- recdat[[n]]
       
       if(!is.na(f1[1])){
         val.dat <- lapply(f1, function(val = f1[[1]]){
           temp <- unlist(val$recombination_breakpoints)
           temp <- temp[!is.na(temp)]
-          return(as.data.frame(cbind(cM = temp,
-                                     # Pr = val$Valent_probability,
-                                     Ind = names(recdat[n]))))
+          if(length(temp) > 0)  return(as.data.frame(cbind(cM = temp,
+                                                           # Pr = val$Valent_probability,
+                                                           Ind = names(recdat[n]))))
+          
         })
         
-        if(length(val.dat) > 1){
-          # in this case there are multiple possible valency solutions - combine them:
-          val.combined <- do.call(rbind,val.dat)
+        if(!is.null(val.dat)){
           
-          if(ncol(val.combined) == 2){
-            cM.unique <- sort(unique(as.numeric(val.combined[,"cM"])))
-            # val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 3,
-            # dimnames = list(NULL,c("cM","Pr","Ind"))))
+          if(length(val.dat) > 1){
+            # in this case there are multiple possible valency solutions - combine them:
+            val.combined <- do.call(rbind,val.dat)
             
-            val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 2,
-                                            dimnames = list(NULL,c("cM","Ind"))))
+            if(ncol(val.combined) == 2){
+              cM.unique <- sort(unique(as.numeric(val.combined[,"cM"])))
+              # val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 3,
+              # dimnames = list(NULL,c("cM","Pr","Ind"))))
+              
+              val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 2,
+                                              dimnames = list(NULL,c("cM","Ind"))))
+              
+              val.out[,"cM"] <- cM.unique
+              # val.out[,"Pr"] <- sapply(cM.unique, function(cm) sum(as.numeric(val.combined[val.combined[,"cM"] == cm,"Pr"])))
+              val.out[,"Ind"] <- names(recdat[n])
+            } else{
+              val.out <- NULL
+            }
             
-            val.out[,"cM"] <- cM.unique
-            # val.out[,"Pr"] <- sapply(cM.unique, function(cm) sum(as.numeric(val.combined[val.combined[,"cM"] == cm,"Pr"])))
-            val.out[,"Ind"] <- names(recdat[n])
           } else{
-            val.out <- NULL
+            val.out <- val.dat[[1]]
           }
           
-        } else{
-          val.out <- val.dat[[1]]
+          return(val.out)
         }
-        
-        return(val.out)
       }
     })
     )
@@ -2381,7 +2501,7 @@ plotRecLS <- function(recombination_data,
   }
   
   ## Return output of both dimensions:
-  return(list(per_LG = perLG.ls,
+  invisible(list(per_LG = perLG.ls,
               per_individual = offspring_counts))
   
 } #plotRecLS
@@ -3647,6 +3767,8 @@ singleMarkerRegression <- function(dosage_matrix,
 #' @description Fits splines to IBD probabilities at a grid of positions at user-defined spacing.
 #' @param IBD_list List of IBD probabilities
 #' @param gap The size (in centiMorgans) of the gap between splined positions
+#' @param method One of two options, either "linear" or "cubic". The default method (cubic) fits cubic splines, and although more accurate,
+#' becomes computationally expensive in higher-density data-sets, where the linear option may be preferable.
 #' @param ncores Number of cores to use, by default 1 only. Works both for Windows and UNIX (using \code{doParallel}).
 #' Use \code{parallel::detectCores()} to find out how many cores you have available. Note that with large datasets, using multiple cores
 #' will use large amounts of memory (RAM). Single-core or e.g. 2-core evaluations, although slower, is less memory-intensive.
@@ -3658,12 +3780,15 @@ singleMarkerRegression <- function(dosage_matrix,
 #' @export
 spline_IBD <- function(IBD_list,
                        gap,
+                       method = "cubic",
                        ncores = 1,
                        log = NULL){
   
   IBD_list <- test_IBD_list(IBD_list)
   
   if(!is.numeric(gap)) stop("gap must be numeric (e.g. gap = 1)")
+  
+  method <- match.arg(method,choices = c("linear","cubic"))
   
   if(is.null(log)) {
     log.conn <- stdout()
@@ -3681,10 +3806,32 @@ spline_IBD <- function(IBD_list,
     IBDarray.spl <- array(data = 0,dim = c(length(gridPos),dim(IBD_list[[l]]$IBDarray)[2:3]),
                           dimnames = c(list(paste0("cM",gridPos)),dimnames(IBD_list[[l]]$IBDarray)[2:3]))
     
+    predict.linear <- function(ibd, mp, grd){
+      grd_snip <- grd[2:(length(grd)-1)] #this is because the end-points need not be interpolated
+      hits <- as.factor(findInterval(grd_snip,mp))
+      
+      pred <- function(x0,x1,y0,y1,x_targ) {
+        return(y0 + (y1-y0)*(x_targ - x0)/(x1-x0))
+      }
+      
+      out <- do.call(c,lapply(as.numeric(levels(hits)),function(n){
+        pred(x0 = mp[n], x1 = mp[n+1], 
+             y0 = ibd[n], y1 = ibd[n+1],
+             x_targ = grd_snip[hits==n])
+      }))
+      
+      ## return first and last positions (that were snipped out)
+      return(c(ibd[1],out,ibd[length(ibd)]))
+    }
+    
     ## Splining is per individual. Fill in a loop
     for(f1 in 1:dim(IBDarray.spl)[3]){
       IBDarray.spl[,,f1] <- apply(IBD_list[[l]]$IBDarray[,,f1],2,function(xm){
-        predict(smooth.spline(map.pos,xm),gridPos)$y
+        if(method == "linear"){
+          return(predict.linear(ibd = xm,mp = map.pos,grd = gridPos))
+        } else{
+          return(predict(smooth.spline(map.pos,xm),gridPos)$y)
+        }
       })
       IBDarray.spl[,,f1][IBDarray.spl[,,f1] < 0] <- 0
       # normalise:
@@ -4356,7 +4503,7 @@ visualiseHaplo <- function(IBD_list,
     }
   }
   
-  return(list(recombinants = recombinants,
+  invisible(list(recombinants = recombinants,
               allele_fish = alleles_fished))
   
 } #visualiseHaplo

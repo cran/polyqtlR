@@ -191,11 +191,11 @@ plotLinearQTL(LOD_data = qtl_LODs.4x_cofactor,
 #                genotype.ID = "geno")
 #  
 #  QTLmodel <- check_cofactors(IBD_list = IBD_4x,
-#                                      Phenotype.df = blues,
-#                                      genotype.ID = "geno",
-#                                      trait.ID = "blue",
-#                                      LOD_data = qtl_LODs.4x,
-#                                      ncores = nc)
+#                              Phenotype.df = blues,
+#                              genotype.ID = "geno",
+#                              trait.ID = "blue",
+#                              LOD_data = qtl_LODs.4x,
+#                              ncores = nc)
 #  
 #  
 #  QTLmodel
@@ -292,11 +292,11 @@ plotLinearQTL_list(LOD_data.ls =  list(qtl_LODs.4x,
 
 ## -----------------------------------------------------------------------------
 PVE(IBD_list = IBD_4x,
-                Phenotype.df = Phenotypes_4x,
-                genotype.ID = "geno",
-                trait.ID = "pheno",
-                block = "year",
-                QTL_df = data.frame("LG" = 1,"cM" = 12.3))
+    Phenotype.df = Phenotypes_4x,
+    genotype.ID = "geno",
+    trait.ID = "pheno",
+    block = "year",
+    QTL_df = data.frame("LG" = 1,"cM" = 12.3))
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  mr <- meiosis_report(IBD_list = IBD_4x)
@@ -355,12 +355,12 @@ visualiseHaplo(IBD_list = IBD_4x,
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  visHap2 <- visualiseHaplo(IBD_list = IBD_4x,
-#                             display_by = "name",
-#                             select_offspring = "all",
-#                             linkage_group = 1,
-#                             cM_range = c(1.56,15),
-#                             allele_fish = 1,
-#                             multiplot = c(4,2))
+#                            display_by = "name",
+#                            select_offspring = "all",
+#                            linkage_group = 1,
+#                            cM_range = c(1.56,15),
+#                            allele_fish = 1,
+#                            multiplot = c(4,2))
 
 ## -----------------------------------------------------------------------------
 visHap2
@@ -373,33 +373,66 @@ visualiseHaplo(IBD_list = IBD_4x,
                cM_range = c(1.56,15),
                multiplot = c(4,4))
 
+## ---- eval = FALSE------------------------------------------------------------
+#  IBD_multiError <- maxL_IBD(phased_maplist = phased_maplist.4x,
+#                             genotypes = SNP_dosages.4x,
+#                             ploidy = 4,
+#                             bivalent_decoding = FALSE,
+#                             errors = c(0.01,0.02,0.05,0.1,0.2),
+#                             ncores = 4)
+
+## ---- eval = FALSE------------------------------------------------------------
+#  IBD_4x <- IBD_multiError$maxL_IBD
+
+## ---- eval = FALSE------------------------------------------------------------
+#  # Copy our dosage matrix to a new matrix:
+#  error_dosages <- SNP_dosages.4x
+#  
+#  # Only work with offspring errors for now:
+#  F1cols <- 3:ncol(error_dosages)
+#  
+#  # Count number of (offspring) dosage scores:
+#  ndose <- length(error_dosages[,F1cols])
+#  
+#  # Generate a vector of random positions (10% of total nr):
+#  set.seed(42)
+#  error.pos <- sample(1:ndose,round(ndose*0.1))
+#  
+#  # Replace real values with these random scores (simple error simulation):
+#  error_dosages[,F1cols][error.pos] <- sapply(error_dosages[,F1cols][error.pos], function(x) sample(setdiff(0:4,x),1))
+#  
+#  # Re-estimate IBD probabilities, using the maxL_IBD function:
+#  IBD_multiError <- maxL_IBD(phased_maplist = phased_maplist.4x,
+#                             genotypes = error_dosages,
+#                             ploidy = 4,
+#                             errors = c(0.01, 0.02, 0.05, 0.1, 0.3),
+#                             ncores = nc)
+#  
+#  IBD_4x.err <- IBD_multiError$maxL_IBD
+#  
+#  # Re-impute marker dosages
+#  new_dosages <- impute_dosages(IBD_list=IBD_4x.err,dosage_matrix=error_dosages,
+#                                min_error_prior = 0.01,
+#                                rounding_error = 0.2)
+#  
+
+## ---- echo = FALSE------------------------------------------------------------
+cat("____________________________________________________________________________
+
+186 out of a total possible 186 markers were imputed
+In the original dataset there were 0 % missing values among the 186 markers
+In the imputed dataset there are now 1.4 % missing values among these, using a rounding threshold of 0.2
+
+____________________________________________________________________________
+The % of markers with changed dosage scores is as follows (0 = no change):
+error.matrix
+    0     1     2     3     4 
+89.44  4.18  2.88  1.72  0.35 ")
+new_dosages <- readRDS(file = "new_dosages.RDS")
+error_dosages <- readRDS(file = "error_dosages.RDS")
+F1cols <- 3:ncol(error_dosages); ndose <- length(error_dosages[,F1cols])
+
 ## -----------------------------------------------------------------------------
-# Copy our dosage matrix to a new matrix:
-error_dosages <- SNP_dosages.4x
-
-# Only work with offspring errors for now:
-F1cols <- 3:ncol(error_dosages)
-
-# Count number of (offspring) dosage scores:
-ndose <- length(error_dosages[,F1cols])
-
-# Generate a vector of random positions (10% of total nr):
-error.pos <- sample(1:ndose,round(ndose*0.1))
-
-# Replace real values with these random scores (simple error simulation):
-error_dosages[,F1cols][error.pos] <- sapply(error_dosages[,F1cols][error.pos], function(x) sample(setdiff(0:4,x),1))
-
-# Re-estimate IBD probabilities, using a high error prior of 0.3:
-IBD_4x.err <- estimate_IBD(phased_maplist = phased_maplist.4x,
-                           genotypes = error_dosages,
-                           ploidy = 4,
-                           error = 0.3, 
-                           ncores = nc)
-# Re-impute marker dosages
-new_dosages <- impute_dosages(IBD_list=IBD_4x.err,dosage_matrix=error_dosages,
-               min_error_prior = 0.05,
-               rounding_error = 0.2)
-
 # Check the results:
 round(length(which(error_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
 

@@ -35,10 +35,12 @@ with a smaller error prior, the function aborts.}
 }
 \description{
 Function to correct marker dosage scores given a list of previously estimated IBD probabilities. This may
-prove useful to correct genotyping errors. Running the \code{\link{estimate_IBD}} function with a high error prior (e.g. 0.6) will 
+prove useful to correct genotyping errors. Running the \code{\link{estimate_IBD}} function with a high error prior will 
 result in suppressed predictions of double recombination events, associated with genotyping errors. By forcing the HMM to penalise 
 double recombinations heavily, a smoothed haplotype landscape is achieved in which individual genotype observations are down-weighted. 
-This smoothed output is then used to re-estimate marker dosages, dependent on (correct) parental scores.
+This smoothed output is then used to re-estimate marker dosages, dependent on (correct) parental scores. 
+An alternative strategy is to use the function \code{\link{maxL_IBD}} over a range of error priors first, and use the resulting \code{$maxL_IBD} output 
+as input here (as the \code{IBD_list}). In this case, set the argument \code{min_error_prior} to a low value (0.005 say) to avoid issues.
 }
 \examples{
 \dontrun{

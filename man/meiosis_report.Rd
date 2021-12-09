@@ -4,15 +4,22 @@
 \alias{meiosis_report}
 \title{Generate a 'report' of predicted meiotic behaviour in an F1 population}
 \usage{
-meiosis_report(IBD_list, visualise = TRUE, precision = 2)
+meiosis_report(
+  IBD_list,
+  visualise = FALSE,
+  plausible_pairing_prob = 0.9,
+  precision = 2
+)
 }
 \arguments{
 \item{IBD_list}{List of IBD probabilities as estimated by \code{\link{estimate_IBD}} using method 'hmm', or externally (e.g. using TetraOrigin)}
 
-\item{visualise}{Logical, by default \code{TRUE}, in which case a plot of the pairing results is produced per LG. In order to 
+\item{visualise}{Logical, by default \code{FALSE}. If \code{TRUE}, a plot of the pairing results is produced per LG. In order to 
 flag extreme deviations from the expected numbers (associated with polysomic inheritance, considered the Null hypothesis),
 barplots are coloured according to the level of significance of the X2 test. Plots showing red bars indicate extreme deviations from
 a polysomic pattern.}
+
+\item{plausible_pairing_prob}{The minimum probability of a pairing configuration needed to analyse an individual's IBD data.}
 
 \item{precision}{To how many decimal places should summed probabilities per bivalent pairing be rounded? By default 2.}
 }

@@ -1,5 +1,6 @@
 #' Bivalent transition matrix function
 #' @param r recombination frequency
+#' @noRd
 bivTM <- function(r) 
   matrix(c(1-r,r,r,1-r),ncol=2)
 
@@ -15,6 +16,7 @@ bivTM <- function(r)
 #' @param title optional title for colour bar
 #' @param ylab optional y-axis label for colour bar
 #' @param cex.lab size of labels on colour bar
+#' @noRd
 colour.bar <- function(col.data, min, max=-min, cex.ticks = 1.2, nticks=11,
                        ticks=seq(min, max, len=nticks), title='', ylab = '',
                        cex.lab = 1) {
@@ -61,6 +63,7 @@ colour.bar <- function(col.data, min, max=-min, cex.ticks = 1.2, nticks=11,
 #' IBD_list.4x <- fast_IBD(phased_maplist = phased_maplist.4x,
 #'                         dosage_matrix = SNP_dosages.4x,
 #'                         ploidy = 4)
+#' @noRd
 fast_IBD <- function(phased_maplist,
                      dosage_matrix,
                      map_function = "haldane",
@@ -334,6 +337,7 @@ fast_IBD <- function(phased_maplist,
 #'                        genotype.ID = "geno",
 #'                        trait.ID = "pheno",
 #'                        ploidy = 4)
+#' @noRd                       
 fast_permute <- function(IBD_list,
                          Phenotype.df,
                          genotype.ID,
@@ -568,6 +572,7 @@ fast_permute <- function(IBD_list,
 #' Extract QTL peak positions from the results of a QTL scan
 #' @description Function to find QTL peaks from output of a QTL scan
 #' @param LOD_data Output of \code{\link{QTLscan}} function
+#' @noRd
 findQTLpeaks <- function(LOD_data){
   if(is.null(LOD_data$Perm.res)) stop("findQTLpeaks :: Please re-run QTLscan with perm_test = TRUE to check significance.")
   
@@ -593,6 +598,7 @@ findQTLpeaks <- function(LOD_data){
 
 #' Hexavalent transition matrix function
 #' @param r recombination frequency
+#' @noRd
 hexTM <- function(r) 
   matrix(c(1-r,r/5,r/5,r/5,r/5,r/5,
            r/5,1-r,r/5,r/5,r/5,r/5,
@@ -677,6 +683,7 @@ hexTM <- function(r)
 #' @examples
 #' data("phased_maplist.4x", "SNP_dosages.4x")
 #' hmm_IBD(phased_maplist=phased_maplist.4x,genotypes=SNP_dosages.4x,ploidy=4)
+#' @noRd
 hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
                                      genotypes,
                                      phased_maplist,
@@ -1076,6 +1083,7 @@ hmm_IBD <- compiler::cmpfun(function(input_type = "discrete",
 #' @description Recursive function checking list depth to determine subsequent subsetting rules
 #' @param obj An input object, may be a (nested) list
 #' @param objdepth Counter to record how deep the recursion has gone
+#' @noRd
 list.depth <- function(obj, objdepth = 0) {
   if(!is.list(obj)) {
     return(objdepth)
@@ -1088,6 +1096,7 @@ list.depth <- function(obj, objdepth = 0) {
 #' @description Function to return a sequence of map positions at steps of size gap from given input
 #' @param cMvect Vector of map positions
 #' @param gap Gap size in cM
+#' @noRd
 mapseq <- function(cMvect, gap){
   ## Error checking input:
   if(length(cMvect) < 2) stop("No need to fit splines on a map with fewer than 2 positions!")
@@ -1109,6 +1118,7 @@ mapseq <- function(cMvect, gap){
 #' @param N number of permutations
 #' @param alpha The threshold level, ie. (1 - alpha) quantile of sorted LOD scores defines threshold
 #' @param gamma The confidence interval specifier, usually 0.05
+#' @noRd
 NettletonDoerge <- function(N = 100,alpha = 0.05,gamma = 0.05){
   lower <- ceiling(N*(1-alpha) - (1/pnorm(1-(gamma/2)))*sqrt(N*(1-alpha)*alpha))
   upper <- ceiling(N*(1-alpha) + (1/pnorm(1-(gamma/2)))*sqrt(N*(1-alpha)*alpha))
@@ -1120,6 +1130,7 @@ NettletonDoerge <- function(N = 100,alpha = 0.05,gamma = 0.05){
 #' @param biv_dec Either TRUE for bivalents only or FALSE to also allow quadrivalents and double reduction
 #' @param pl ploidy level of parent 1, assumed to be even and greater than 4
 #' @param pl2 ploidy level of parent 2, assumed to be even and greater than 2
+#' @noRd
 Nstates.fun <- function(biv_dec, pl, pl2){
   
   if(pl < pl2) stop("pl should always be >= pl2. Please reverse and try again.")
@@ -1154,6 +1165,7 @@ Nstates.fun <- function(biv_dec, pl, pl2){
 #' }
 #' }
 #' @param ploidy  Ploidy of the F1 population (can be 2, 3, 4 or 6)
+#' @noRd
 probgeno_df_to_array <- function(probgeno_df,
                                  ploidy){
   #Note: this function assumes the function test_probgeno_df has already been called 
@@ -1177,6 +1189,7 @@ probgeno_df_to_array <- function(probgeno_df,
 
 #' Quadrivalent transition matrix function
 #' @param r recombination frequency
+#' @noRd
 quadTM <- function(r) 
   matrix(c(1-r,r/3,r/3,r/3,
            r/3,1-r,r/3,r/3,
@@ -1190,6 +1203,7 @@ quadTM <- function(r)
 #' @param ploidy2 Ploidy of parent 2
 #' @param bivalent_decoding Logical, if \code{FALSE} then multivalent pairing assumed
 #' @param full_multivalent_hexa Should multivalent pairing be considered in both parents simultaneously in hexaploids?
+#' @noRd
 state_fun <- function(ploidy, ploidy2, bivalent_decoding, full_multivalent_hexa = FALSE){
   
   ploidyF1 <- (ploidy + ploidy2)/2
@@ -1313,6 +1327,7 @@ state_fun <- function(ploidy, ploidy2, bivalent_decoding, full_multivalent_hexa 
 
 #' Error and warning handling for dosage_matrix
 #' @param dosage_matrix An integer matrix with markers in rows and individuals in columns
+#' @noRd
 test_dosage_matrix <- function(dosage_matrix){
   if(inherits(dosage_matrix,"data.frame")){
     warning("dosage_matrix should be a matrix, now it's a data.frame.")
@@ -1338,6 +1353,7 @@ test_dosage_matrix <- function(dosage_matrix){
 
 #' Error and warning handling for IBD_list as estimated by \code{estimate_IBD}
 #' @param IBD_list List of IBD probabilities
+#' @noRd
 test_IBD_list <- function(IBD_list){
   if(!inherits(IBD_list,"list")) stop("IBD_list: list input expected but not found")
   if(!all(c("IBDtype","IBDarray","map","parental_phase","biv_dec","gap", "genocodes",
@@ -1370,6 +1386,7 @@ test_IBD_list <- function(IBD_list){
 #' }
 #' }
 #' @param ploidy  Ploidy of the F1 population (can be 2, 3, 4 or 6)
+#' @noRd
 test_probgeno_df <- function(probgeno_df,
                              ploidy){
   if(!inherits(probgeno_df, "data.frame")) {
@@ -1390,6 +1407,7 @@ test_probgeno_df <- function(probgeno_df,
 #' Bivalent-pairing transition matrix function, diploid
 #' @param m1 marker
 #' @param r_vect Vector of adjacent recombination frequencies
+#' @noRd
 TM.biv.2 <- function(m1,r_vect) {
   if(m1 == 0){
     out <- bivTM(0.5)
@@ -1402,6 +1420,7 @@ TM.biv.2 <- function(m1,r_vect) {
 #' Bivalent-pairing transition matrix function, tetraploid
 #' @param m1 marker
 #' @param r_vect Vector of adjacent recombination frequencies
+#' @noRd
 TM.biv.4 <- function(m1,r_vect) {
   if(m1 == 0){
     out <- kronecker(bivTM(0.5),bivTM(0.5)) #Starting transition matrix as one of the positions is 0 (i.e. in initialisation state)
@@ -1414,6 +1433,7 @@ TM.biv.4 <- function(m1,r_vect) {
 #' Bivalent-pairing transition matrix function, hexaploid
 #' @param m1 marker
 #' @param r_vect Vector of adjacent recombination frequencies
+#' @noRd
 TM.biv.6 <- function(m1,r_vect) {
   if(m1 == 0){
     out <- kronecker(bivTM(0.5),kronecker(bivTM(0.5),bivTM(0.5)))
@@ -1426,7 +1446,9 @@ TM.biv.6 <- function(m1,r_vect) {
 #' Hexavalent-pairing transition matrix function, hexaploid
 #' @param m1 marker
 #' @param r_vect Vector of adjacent recombination frequencies
-#' @param rem_hex Index of genotype classes to remove, work-around from overly-general transition matrix with redundant classes
+#' @param rem_hex Index of genotype classes to remove, work-around from overly-general transition 
+#' matrix with redundant classes
+#' @noRd
 TM.hex <- function(m1,r_vect,rem_hex = rem.hex) {
   if(m1 == 0){
     out <- kronecker(hexTM(0.5),kronecker(hexTM(0.5),hexTM(0.5)))
@@ -1440,7 +1462,9 @@ TM.hex <- function(m1,r_vect,rem_hex = rem.hex) {
 #' Quadrivalent-pairing transition matrix function, tetraploid
 #' @param m1 marker
 #' @param r_vect Vector of adjacent recombination frequencies
-#' @param rem_quad Index of genotype classes to remove, work-around from overly-general transition matrix with redundant classes
+#' @param rem_quad Index of genotype classes to remove, work-around from overly-general transition 
+#' matrix with redundant classes
+#' @noRd
 TM.quad <- function(m1,r_vect,rem_quad = rem.quad) {
   if(m1 == 0){
     out <- kronecker(quadTM(0.5),quadTM(0.5)) #Starting transition matrix as one of the positions is 0 (i.e. in initialisation state)
@@ -1454,46 +1478,57 @@ TM.quad <- function(m1,r_vect,rem_quad = rem.quad) {
 #' Diploid bi-parental transition matrix
 #' @param m1 marker
 #' @param r_vect Vector of adjacent recombination frequencies
+#' @noRd
 TMfun.2x_B <- TM.biv.4
 
 #' Triploid bi-parental transition matrix, bivalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.3x_BB <- function(...) kronecker(TM.biv.4(...),TM.biv.2(...))
 
 #' Triploid bi-parental transition matrix, quadrivalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.3x_QB <- function(...) kronecker(TM.quad(...),TM.biv.2(...))
 
 #' Tetraploid bi-parental transition matrix, bivalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.4x_BB <- function(...) kronecker(TM.biv.4(...), TM.biv.4(...))
 
 #' Tetraploid bi-parental transition matrix, bivalent-quadrivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.4x_BQ <- function(...) kronecker(TM.biv.4(...), TM.quad(...))
 
 #' Tetraploid bi-parental transition matrix, quadrivalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.4x_QB <- function(...) kronecker(TM.quad(...), TM.biv.4(...))
 
 #' Tetraploid bi-parental transition matrix, quadrivalent-quadrivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.4x_QQ <- function(...) kronecker(TM.quad(...), TM.quad(...))
 
 #' Hexaploid bi-parental transition matrix, bivalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.6x_BB <- function(...) kronecker(TM.biv.6(...), TM.biv.6(...))
 
 #' Hexaploid bi-parental transition matrix, bivalent-hexavalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.6x_BH <- function(...) kronecker(TM.biv.6(...), TM.hex(...))
 
 #' Hexaploid bi-parental transition matrix, hexavalent-bivalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.6x_HB <- function(...) kronecker(TM.hex(...), TM.biv.6(...))
 
 #' Hexaploid bi-parental transition matrix, hexavalent-hexavalent pairing
 #' @param \dots Arguments passed to parental TM functions
+#' @noRd
 TMfun.6x_HH <- function(...) kronecker(TM.hex(...), TM.hex(...)) #this becomes computationally intractable
 
 
@@ -1502,6 +1537,7 @@ TMfun.6x_HH <- function(...) kronecker(TM.hex(...), TM.hex(...)) #this becomes c
 #' @param x Vector of interest
 #' @param w Vector of weights
 #' @param na.rm Should missing values be removed? By default, \code{FALSE}
+#' @noRd
 weighted.var <- function(x, w, na.rm = FALSE) {
   if (na.rm) {
     w <- w[i <- !is.na(x)]
@@ -1518,6 +1554,7 @@ weighted.var <- function(x, w, na.rm = FALSE) {
 #' @description Functionalized writing of function name and arguments as start for log paragraph.
 #' @param matc A object of class \code{call}
 #' @param log A character string specifying the log file
+#' @noRd
 write.logheader <- function(matc, log){
   args <- as.list(matc)
   #args.df <- data.frame(names=names(args), values=as.character(args))

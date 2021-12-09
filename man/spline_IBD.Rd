@@ -4,12 +4,15 @@
 \alias{spline_IBD}
 \title{Fit splines to IBD probabilities}
 \usage{
-spline_IBD(IBD_list, gap, ncores = 1, log = NULL)
+spline_IBD(IBD_list, gap, method = "cubic", ncores = 1, log = NULL)
 }
 \arguments{
 \item{IBD_list}{List of IBD probabilities}
 
 \item{gap}{The size (in centiMorgans) of the gap between splined positions}
+
+\item{method}{One of two options, either "linear" or "cubic". The default method (cubic) fits cubic splines, and although more accurate,
+becomes computationally expensive in higher-density data-sets, where the linear option may be preferable.}
 
 \item{ncores}{Number of cores to use, by default 1 only. Works both for Windows and UNIX (using \code{doParallel}).
 Use \code{parallel::detectCores()} to find out how many cores you have available. Note that with large datasets, using multiple cores

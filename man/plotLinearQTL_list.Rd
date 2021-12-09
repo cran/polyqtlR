@@ -22,6 +22,7 @@ plotLinearQTL_list(
   return_plotData = FALSE,
   highlight_positions = NULL,
   LGdiv.col = "gray42",
+  use_LG_names = TRUE,
   ...
 )
 }
@@ -64,6 +65,8 @@ argument of function \code{\link{QTLscan}}. This can be useful if genetic co-fac
 If no position is to be highlighted, add the corresponding list element as \code{NULL}.}
 
 \item{LGdiv.col}{Colour of dividing lines between linkage groups, by default grey.}
+
+\item{use_LG_names}{Logical, by default \code{TRUE}. Should original character LG names be used as axis labels, or should numbering be used instead?}
 
 \item{\dots}{Arguments passed to \code{\link{lines}} or \code{\link{points}} as appropriate (see argument plot_type).}
 }

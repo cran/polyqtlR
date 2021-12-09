@@ -21,11 +21,11 @@ knitr::opts_chunk$set(echo = TRUE)
 <a name="sect1"></a>
 
 ## Introduction
-It is nowadays increasingly feasible to conduct genetic analyses in polyploid populations thanks to developments in genotyping technologies as well as tools designed to deal with these genotypes. `polyqtlR` is one such tool that provides a number of functions to perform quantitative trait locus (QTL) mapping in F1 populations of outcrossing, heterozygous polyploid species.
+It is nowadays increasingly feasible to conduct genetic analyses in polyploid populations thanks to developments in genotyping technologies as well as tools designed to deal with these genotypes. `polyqtlR` is one such tool that provides a number of functions to perform quantitative trait locus (QTL) mapping in F1 populations of outcrossing, heterozygous polyploid species. For more details on the methodology, please see the 2021 *Bioinformatics* publication of [Bourke *et al.*](https://doi.org/10.1093/bioinformatics/btab574).
 
 `polyqtlR` assumes that a number of prior steps have already been performed - in particular, that an integrated linkage map for the mapping population has been generated. The package has been developed to utilise the output of the mapping software `polymapR`, although any alternative mapping software that produces phased and integrated linkage maps could also be used. However, the input files may have to be altered in such cases. Currently, bi-allelic SNP markers are the expected raw genotypic data, which is also the data format used by `polymapR` in map construction. However, some functions can also accept probabilistic genotypic data, for example in the estimation of IBD probabilities. Full functionality of probabilistic genotypes in the package has yet to be implemented but is planned for future releases. The assignment of marker dosages in polyploid species can be achieved using a number of R packages such as `fitPoly` [@Voorrips2011]. More background on the steps of dosage-calling and polyploid linkage mapping can be found in a review of the topic by Bourke *et al.* (2018) [@Bourke2018a].
 
-The QTL analysis functions primarily rely on identity-by-descent (IBD) probabilities, which are the probabilities of inheritance of particular combinations of parental haplotypes. Single-marker QTL detection methods are also available. The package was originally developed with the IBD output of TetraOrigin [@Zheng2016] in mind. However, the TetraOrigin package is currently only applicable to tetraploid datasets, and has been implemented in the proprietary software *Mathematica*. Therefore, alternative options to estimate IBD probabilities within R for multiple ploidy levels are offered in `polyqtlR`.
+The QTL analysis functions primarily rely on identity-by-descent (IBD) probabilities, which are the probabilities of inheritance of particular combinations of parental haplotypes. Single-marker QTL detection methods are also available. The package was originally developed with the IBD output of TetraOrigin [@Zheng2016] in mind. However, the TetraOrigin package is only applicable to tetraploid datasets, and has been implemented in the proprietary software *Mathematica*. Therefore, alternative options to estimate IBD probabilities within R for multiple ploidy levels are offered in `polyqtlR`.
 
 Genotyping errors are a regular feature of modern marker datasets. Although linkage mapping software such as `polymapR` has been shown to be relatively robust against genotyping errors [@Bourke2018b], if present in sufficiently large proportions (~10 % errors or more) issues may arise with map accuracy and QTL detection. Therefore, a number of functions have been included in `polyqtlR` to check map accuracy using the estimated IBD probabilities, and to re-impute marker genotypes if required. These imputed genotypes may then be used in an iterative process to re-estimate the linkage map and re-run a QTL analysis.
 
@@ -69,7 +69,7 @@ Currently two options to estimate IBD probabilities in an F1 population exist wi
 The method behind TetraOrigin [@Zheng2016] for offspring IBD probability estimation given a known parental marker phasing has also been replicated in the `polyqtlR::estimate_IBD` function (this is the default method used). Note that unlike the original TetraOrigin software, parental marker phasing is not re-estimated. However, this is usually a direct output of the linkage mapping procedure (*e.g.* using `polymapR`). 
 
 ### Data structures
-As the IBD data are the most central objects in this package it is worth spending a moment describing them. In `polyqtlR`, IBD probabilities are organised in nested list form. The first level of structure are the linkage groups. In our example dataset, the list should have 5 elements corresponding to the 5 linkage groups, each of which is itself a list containing the following elements:
+As the IBD data are the most central objects in this package it is worth spending a moment describing them. In `polyqtlR`, IBD probabilities are organised in nested list form. The first level of structure are the linkage groups. In our example dataset, the list should have two elements corresponding to the two linkage groups, each of which is itself a list containing the following elements:
 
 * **IBDtype** The type of IBD probability, either "genotypeIBD" or "haplotypeIBD" 
 
@@ -88,7 +88,7 @@ As the IBD data are the most central objects in this package it is worth spendin
 * **biv_dec** Whether bivalents only (`TRUE`) or also multivalents were allowed (`FALSE`) in the procedure 
 
 * **gap** Here `NULL`, but later this can hold a numeric value (e.g. 1 cM) if IBDs are 'splined' or interpolated.
- 
+
 * **genocodes** Ordered list of genotype codes used to represent the different genotype classes
 
 * **pairing** Log likelihoods of each of the different pairing scenarios considered
@@ -110,7 +110,11 @@ The `estimate_IBD` function of `polyqtlR` with the default setting `method = "hm
 
 Some of the code used to estimate these IBD probabilities has been programmed in C++ to improve performance, and relies on both the `Rcpp` and `RcppArmadillo` packages to provide the interface between R, C++ and the Armadillo C++ library.
 
-We run the function, in this case allowing for multivalents (`bivalent_decoding = FALSE`), as follows:
+The expected format of input files is that used by the mapping software `polymapR` [@Bourke2018b]. If you have used other software for map construction and/or genotype calling, you will need to convert your input files to the correct format. There are already some tools available to do this (although it should be quite straightforward if you look at the expected format using the example data files provided here). For example, if you generated the phased linkage map using `mappoly` [@Mollinari2019], you can convert your map to the required format using the `convert_mappoly_to_phased.maplist` function (check out the help using `?convert_mappoly_to_phased.maplist` for details). 
+
+The genotypes can be either discrete or probabilistic. If the genotypes are discrete, they must be provided as a matrix of marker dosage scores (for example as provided in this tutorial in `SNP_dosages.4x`) with marker names as row-names, and individual names (including the two parents) as column-names. Checks are performed and non-numeric data is converted to numeric data if needed. Alternatively, probabilistic genotypes can be provided which can either be the direct output of the `fitpoly` [@Voorrips2011] function `saveMarkerModels`, or from some other polyploid-appropriate genotype-calling software. For example, if `polyRAD` [@clark2019] or `updog` [@gerard2018] were used for genotype calling, a conversion step is needed. Functions for doing this are provided by `polymapR`. Check out `?polymapR::convert_polyRAD` or `?polymapR::convert_updog` for details.
+
+We run the function `estimate_IBD` using the phased linkage map `phased_maplist.4x` as generated by `polymapR`, in this case allowing for multivalents (`bivalent_decoding = FALSE`), as follows:
 
 ```{r eval = FALSE}
 IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
@@ -164,8 +168,6 @@ IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
 ```
 
 Note that the attribute `IBDtype` is now `haplotypeIBD`, referring to the fact that these IBDs are the probabilities of inheriting each parental haplotype at a locus, as opposed to the probabilities of inheriting particular combinations of parental alleles at a locus (`genotypeIBD`). Although similar, certain downstream functions such as `exploreQTL` can only work with the former (although you will still be able to visualise QTL allele effects with the `visualiseQTL` function). The accuracy of these IBDs is generally *lower* than if `method = "hmm"` had been used (and therefore the power of subsequent QTL analyses will be somewhat reduced). 
-
-
 
 ### High marker densities
 Particularly at higher ploidy levels (6x), it becomes computationally expensive to estimate IBDs using the `hmm` method. Our experience has shown that for hexaploids with a mapping population size of 400 or more individuals running on 4 cores, about 200 - 300 markers per chromosome can be accommodated on an "above-average" desktop computer (16 GB RAM). Running on a single core will reduce the committed memory, but the evaluation time will therefore be much longer. 250 markers per chromosome should be already enough to estimate IBDs with high accuracy - including extra markers over this amount will add incrementally less information (following the law of diminishing returns).
@@ -462,11 +464,11 @@ blues <- BLUE(data = Phenotypes_4x,
               genotype.ID = "geno")
 
 QTLmodel <- check_cofactors(IBD_list = IBD_4x,
-                                    Phenotype.df = blues,
-                                    genotype.ID = "geno",
-                                    trait.ID = "blue",
-                                    LOD_data = qtl_LODs.4x,
-                                    ncores = nc)
+                            Phenotype.df = blues,
+                            genotype.ID = "geno",
+                            trait.ID = "blue",
+                            LOD_data = qtl_LODs.4x,
+                            ncores = nc)
 
 
 QTLmodel
@@ -637,11 +639,11 @@ It is often useful to estimate the percentage of variance explained (PVE) by you
 
 ```{r}
 PVE(IBD_list = IBD_4x,
-                Phenotype.df = Phenotypes_4x,
-                genotype.ID = "geno",
-                trait.ID = "pheno",
-                block = "year",
-                QTL_df = data.frame("LG" = 1,"cM" = 12.3))
+    Phenotype.df = Phenotypes_4x,
+    genotype.ID = "geno",
+    trait.ID = "pheno",
+    block = "year",
+    QTL_df = data.frame("LG" = 1,"cM" = 12.3))
 ```
 
 <a name="sect9"></a>
@@ -772,12 +774,12 @@ The other output associated with the function is `$allele_fish`, which allows us
 
 ```{r eval = FALSE}
 visHap2 <- visualiseHaplo(IBD_list = IBD_4x,
-                           display_by = "name",
-                           select_offspring = "all",
-                           linkage_group = 1,
-                           cM_range = c(1.56,15),
-                           allele_fish = 1,
-                           multiplot = c(4,2)) 
+                          display_by = "name",
+                          select_offspring = "all",
+                          linkage_group = 1,
+                          cM_range = c(1.56,15),
+                          allele_fish = 1,
+                          multiplot = c(4,2)) 
 ```
 
 Note that these individuals must carry homologue 1 for almost all of the specified segment - therefore specifying a longer segment could also result in *fewer* individuals (as they are more likely to carry recombined chromosomes). As before, we can inspect the output of this function call as follows:
@@ -809,11 +811,28 @@ If all went well, these offspring should all possess the homologue 1 allele in t
 
 One final topic that is useful to include here is that of error correction in our marker genotypes. Particularly when using some next-generation sequencing based methods for genotyping, errors in the data can become quite a problem. One of the many applications of IBD probabilities (and their method of estimation) is to try to determine what the offspring in a population actually inherited in terms of their parental alleles. In the Hidden Markov Model introduced [earlier](#hmm), we did not discuss choice of prior for genotyping errors. The function uses a default prior of 0.01. What this means in practice is that we put a very high weight on our genotype observations: with such a prior in a tetraploid, the probability that an offspring score of '1' is in fact a true '1' is 0.99, while the probability of it being 0, 2, 3 or 4 is 0.01 (and therefore the probability of its true state being 0 is only 0.01/4 *i.e.* only 0.25 %). This is clearly a very strong prior on our observed genotype values and can lead to many erroneous recombinations being predicted.
 
-A very simple solution to this issue when there seems to be evidence of many genotyping errors (see previous [haplotype plot](#hp) for an example) is to increase the error prior when estimating the IBD probabilities, to effectively suppress incorrect prediction of double recombination events. You can experiment with various error prior probabilities (argument `e` in `estimate_IBD`), and look at their effect on both the overall recombination counts, and the marginal likelihoods per individual (another one of the outputs of the `estimate_IBD` function). In general, a prior of 0.1 or even 0.2 will suppress spurious recombinations from being predicted, but make sure to check that this doesn't decrease the likelihood from that at a lower genotype error estimate. Note that an error prior of 0.8 in a tetraploid means we actually consider all possible dosage scores as equally likely (with a probability of 0.2). However, setting an error prior at this level means that you consider your data to be random noise.  
+A very simple solution to this issue when there seems to be evidence of many genotyping errors (see previous [haplotype plot](#hp) for an example) is to increase the error prior when estimating the IBD probabilities, to effectively suppress incorrect prediction of double recombination events. In general, a prior of 0.1 or even 0.2 will suppress spurious recombinations from being predicted. Note that an error prior of 0.8 in a tetraploid means we actually consider all possible dosage scores as equally likely (with a probability of 0.2). However, setting an error prior at this level means that you consider your data to be random noise. 
+
+To facilitate this procedure, the function `maxL_IBD` is provided which runs the step of IBD estimation over the range of `errors` provided, merging the results by selecting those that maximise the marginal likelihood of the data, per individual (and per linkage group). A default set of error priors (0.01, 0.05, 0.1, 0.2) are checked which should adequetly cover the range of possible error rates commonly encountered. To run this function, use the following call (basically takes the same arguments as `estimate_IBD` but with `errors` instead of `error` to signify multiple error priors being applied):
+
+```{r, eval = FALSE}
+IBD_multiError <- maxL_IBD(phased_maplist = phased_maplist.4x,
+                           genotypes = SNP_dosages.4x,
+                           ploidy = 4,
+                           bivalent_decoding = FALSE,
+                           errors = c(0.01,0.02,0.05,0.1,0.2),
+                           ncores = 4)
+```
+
+The output is now a list, but to access the IBD object we have been using here throughout, simply extract the `maxL_IBD` element of the output, *i.e.*
+
+```{r, eval = FALSE}
+IBD_4x <- IBD_multiError$maxL_IBD
+```
 
 Once you are happy with the results (again, using the visualisation tools described earlier) you have one further possibility open to you: to re-impute your marker genotypes given these "smoothed" IBD probabilities. This can be achieved using the function `impute_dosages`. To demonstrate this here, we will artificially introduce some genotyping errors (something you normally would *not* do), and then re-estimate the IBDs using a higher error prior:
 
-```{r}
+```{r, eval = FALSE}
 # Copy our dosage matrix to a new matrix:
 error_dosages <- SNP_dosages.4x
 
@@ -824,29 +843,55 @@ F1cols <- 3:ncol(error_dosages)
 ndose <- length(error_dosages[,F1cols])
 
 # Generate a vector of random positions (10% of total nr):
+set.seed(42)
 error.pos <- sample(1:ndose,round(ndose*0.1))
 
 # Replace real values with these random scores (simple error simulation):
 error_dosages[,F1cols][error.pos] <- sapply(error_dosages[,F1cols][error.pos], function(x) sample(setdiff(0:4,x),1))
 
-# Re-estimate IBD probabilities, using a high error prior of 0.3:
-IBD_4x.err <- estimate_IBD(phased_maplist = phased_maplist.4x,
+# Re-estimate IBD probabilities, using the maxL_IBD function:
+IBD_multiError <- maxL_IBD(phased_maplist = phased_maplist.4x,
                            genotypes = error_dosages,
                            ploidy = 4,
-                           error = 0.3, 
+                           errors = c(0.01, 0.02, 0.05, 0.1, 0.3), 
                            ncores = nc)
+
+IBD_4x.err <- IBD_multiError$maxL_IBD
+
 # Re-impute marker dosages
 new_dosages <- impute_dosages(IBD_list=IBD_4x.err,dosage_matrix=error_dosages,
-               min_error_prior = 0.05,
-               rounding_error = 0.2)
+                              min_error_prior = 0.01,
+                              rounding_error = 0.2)
 
+```
+
+
+```{r, echo = FALSE}
+cat("____________________________________________________________________________
+
+186 out of a total possible 186 markers were imputed
+In the original dataset there were 0 % missing values among the 186 markers
+In the imputed dataset there are now 1.4 % missing values among these, using a rounding threshold of 0.2
+
+____________________________________________________________________________
+The % of markers with changed dosage scores is as follows (0 = no change):
+error.matrix
+    0     1     2     3     4 
+89.44  4.18  2.88  1.72  0.35 ")
+new_dosages <- readRDS(file = "new_dosages.RDS")
+error_dosages <- readRDS(file = "error_dosages.RDS")
+F1cols <- 3:ncol(error_dosages); ndose <- length(error_dosages[,F1cols])
+```
+
+
+```{r}
 # Check the results:
 round(length(which(error_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
 
 round(length(which(new_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
 ```
 
-So having had 10% genotyping errors to begin with, we have reduced the error rate in the data to 1%, but also introduced about 2-3% missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in QTL detection (in fact, just using IBD probabilities estimated with an appropriate error prior when the visualised haplotypes seem problematic).
+So having had 10 % genotyping errors to begin with, we have reduced the error rate in the data to 1 %, but also introduced 1.4 % missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in QTL detection (in fact, just using IBD probabilities estimated with an appropriate error prior when the visualised haplotypes seem problematic).
 
 ## Concluding remarks
 We hope you have been able to successfully run a QTL analysis and explore polyploid meiotic dynamics using your data and the methods described here. The package may still be further improved and developed, and feedback on performance, suggestions for improvements / extensions and bug reporting is most welcome; please contact the developer Peter Bourke (peter.bourke _at_ wur.nl).

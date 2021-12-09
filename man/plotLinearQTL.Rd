@@ -20,7 +20,7 @@ plotLinearQTL(
   thresh.col = "darkred",
   return_plotData = FALSE,
   show_thresh_CI = TRUE,
-  use_LG_names = FALSE,
+  use_LG_names = TRUE,
   axis_label.cex = 1,
   custom_LG_names = NULL,
   LGdiv.col = "gray42",
@@ -63,7 +63,7 @@ which can be useful for subsequent plot manipulations and overlays.}
 
 \item{show_thresh_CI}{Logical, by default \code{TRUE}. Should confidence interval bounds around LOD threshold be shown?}
 
-\item{use_LG_names}{Logical, by default \code{FALSE}. Should original character LG names be used as axis labels, or should numbering be used instead?}
+\item{use_LG_names}{Logical, by default \code{TRUE}. Should original character LG names be used as axis labels, or should numbering be used instead?}
 
 \item{axis_label.cex}{Argument to adjust the size of the axis labels, can be useful if there are many linkage groups to plot}
 

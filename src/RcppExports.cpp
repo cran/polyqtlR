@@ -6,6 +6,11 @@
 
 using namespace Rcpp;
 
+#ifdef RCPP_USE_GLOBAL_ROSTREAM
+Rcpp::Rostream<true>&  Rcpp::Rcout = Rcpp::Rcpp_cout_get();
+Rcpp::Rostream<false>& Rcpp::Rcerr = Rcpp::Rcpp_cerr_get();
+#endif
+
 // fx
 Rcpp::List fx(const arma::mat& EM, const arma::cube& TM);
 RcppExport SEXP _polyqtlR_fx(SEXP EMSEXP, SEXP TMSEXP) {
