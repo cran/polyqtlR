@@ -1,8 +1,8 @@
-d9d07eb146e9531f556f7170b79f01f5 *DESCRIPTION
+cb46e652f98e7109db420c026417c7e8 *DESCRIPTION
 8ac27a707192463a036d87955d4d9c1f *NAMESPACE
 39d9cfa7713a702e47dda3e9d52df770 *R/RcppExports.R
 95a853dbffe911b6dd766c09b1621c1c *R/accessory_functions.R
-3d00aa743a2ddf327dfeef5b25f8eaa8 *R/polyqtlR_functions.R
+5abadcca4867cd8b7cca41cd36166faa *R/polyqtlR_functions.R
 17aacf3f8c0880c7dc6993afc653b2f0 *R/roxygen_datasets.R
 44de50d1e9703229de38471bf2c6d705 *R/sysdata.rda
 0898a54715aeee9632cdfb92dcdfa49d *build/vignette.rds
@@ -20,7 +20,7 @@ a84bcfe81f18788a89bce3796834b0df *data/segList_2x.rda
 97d214fbf78eb984c594c52a759a94ce *data/segList_4x.rda
 38d45136574b3bbda0cc268ca0fb812c *data/segList_6x.rda
 30036e45f6a1889350432b50fa6ffec7 *inst/doc/polyqtlR_vignette.R
-6c7d5d1afbfd36c689297c5a821921fe *inst/doc/polyqtlR_vignette.html
+f98fb5c4ddbc1ca0509e056b14383d2f *inst/doc/polyqtlR_vignette.html
 9f740513e1eeb1116c77c2af52915333 *inst/doc/polyqtlR_vignette.rmd
 ce2894923fdc4c1770c8426db98405b1 *man/BLUE.Rd
 09720a5cd4e68a6bc53e8e6d8f4e3220 *man/BLUEs.pheno.Rd
@@ -33,7 +33,7 @@ c1b68520b54d878d4f3a13e766b91bd7 *man/Rec_Data_4x.Rd
 0ab119459160fb7afb92615aad81ad47 *man/SNP_dosages.4x.Rd
 1a1c46e289bd2d89c35feefb54bda36a *man/bx.Rd
 bd552aaace04fd5b8a57c1b77112fd0d *man/check_cofactors.Rd
-8239e8c45e54734c73f42f5a4bce6bf0 *man/convert_mappoly_to_phased.maplist.Rd
+609c8b13875184c7223ba999d01abc62 *man/convert_mappoly_to_phased.maplist.Rd
 e7556bdb94f9079e0d8ee8adc2a0be49 *man/count_recombinations.Rd
 dafbedf7132a7ac2c3ecba6e78466a54 *man/estimate_GIC.Rd
 1730e4967166510ca1298bac9f955fdb *man/estimate_IBD.Rd

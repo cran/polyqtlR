@@ -18,6 +18,6 @@ and ploidy + 1 : 2*ploidy for parent 2.
 Convert MAPpoly.map object into a phased maplist, needed for IBD estimation
 }
 \examples{
-data(maps.hexafake, package = "mappoly")
+library("mappoly")
 phased.maplist <- convert_mappoly_to_phased.maplist(maps.hexafake)
 }

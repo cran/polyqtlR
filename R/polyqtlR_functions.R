@@ -381,14 +381,14 @@ count_recombinations <- function(IBD_list,
 #' by the phased map, coded in 1 and 0 for presence/absence of SNP (alternative) allele on parental homologues (h) numbered 1:ploidy for parent 1
 #' and ploidy + 1 : 2*ploidy for parent 2.
 #' @examples
-#' data(maps.hexafake, package = "mappoly")
+#' library("mappoly")
 #' phased.maplist <- convert_mappoly_to_phased.maplist(maps.hexafake)
 #' @export
 convert_mappoly_to_phased.maplist <- function(mappoly_object){
   
   if(class(mappoly_object) != "list") stop("list input expected!")
   
-  ploidy <- mappoly_object[[1]]$info$m
+  ploidy <- mappoly_object[[1]]$info$ploidy
   
   nLG <- length(mappoly_object)
   

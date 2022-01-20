@@ -1,8 +1,8 @@
 Package: polyqtlR
 Type: Package
 Title: QTL Analysis in Autopolyploid Bi-Parental F1 Populations
-Version: 0.0.7
-Date: 2021-12-03
+Version: 0.0.8
+Date: 2022-01-20
 Authors@R: c(person("Peter","Bourke", email = "pbourkey@gmail.com", role = c("aut","cre")),
           person("Christine","Hackett", role = "ctb"),
              person("Chris","Maliepaard", role = "ctb"),
@@ -27,7 +27,7 @@ VignetteBuilder: knitr
 LazyData: true
 LinkingTo: Rcpp, RcppArmadillo
 NeedsCompilation: yes
-Packaged: 2021-12-09 19:13:14 UTC; bourk001
+Packaged: 2022-01-20 21:32:56 UTC; bourk001
 Author: Peter Bourke [aut, cre],
   Christine Hackett [ctb],
   Chris Maliepaard [ctb],
@@ -35,4 +35,4 @@ Author: Peter Bourke [aut, cre],
   Roeland Voorrips [ctb],
   Johan Willemsen [ctb]
 Repository: CRAN
-Date/Publication: 2021-12-09 19:40:03 UTC
+Date/Publication: 2022-01-20 22:12:42 UTC
