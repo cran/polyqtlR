@@ -174,9 +174,18 @@ Particularly at higher ploidy levels (6x), it becomes computationally expensive 
 
 The function `thinmap` can be used to make a selection of markers that tries to maximise their distribution across the genome and across parental homologues. The argument `bin_size` is used to specify the size of the bins in which markers are selected - increasing this results in fewer markers being used. The ideal `bin_size` is 1 cM, although at higher ploidies and with higher marker densities, wider bins may be needed. The function is called as follows:
 
-```{r}
+```{r, eval = FALSE}
 thinned_maplist.4x <- thinmap(maplist = phased_maplist.4x,
                               dosage_matrix = SNP_dosages.4x)
+```
+
+```{r, echo = FALSE}
+cat("87 markers from a possible 93 on LG1 were included.
+
+89 markers from a possible 93 on LG2 were included.")
+```
+```{r, out.width = "780px", echo = FALSE}
+knitr::include_graphics("figures/thinmap.png")
 ```
 
 The object `thinned_maplist.4x` can then be used in place of `phased_maplist.4x` in a call to `estimate_IBD`.
@@ -891,7 +900,7 @@ round(length(which(error_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2
 round(length(which(new_dosages[,F1cols] != SNP_dosages.4x[,F1cols])) / ndose,2)
 ```
 
-So having had 10 % genotyping errors to begin with, we have reduced the error rate in the data to 1 %, but also introduced 1.4 % missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in QTL detection (in fact, just using IBD probabilities estimated with an appropriate error prior when the visualised haplotypes seem problematic).
+So having had 10 % genotyping errors to begin with, we have reduced the error rate in the data to 1 %, but also introduced 1.4 % missing values (these are often around true recombination break-points where we cannot easily decide which parental homologue was inherited). A missing value is an error of sorts, but has a much smaller impact on linkage map quality than a true genotyping error. These corrected genotypes may then be used in an iterative process to improve the underlying linkage map, although usually a single or at most 2 iterations should be used. Previous experience has shown that this approach can also lead to significant improvements in subsequent QTL mapping.
 
 ## Concluding remarks
 We hope you have been able to successfully run a QTL analysis and explore polyploid meiotic dynamics using your data and the methods described here. The package may still be further improved and developed, and feedback on performance, suggestions for improvements / extensions and bug reporting is most welcome; please contact the developer Peter Bourke (peter.bourke _at_ wur.nl).

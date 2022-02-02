@@ -44,9 +44,17 @@ nc <- 2 #to pass CRAN checks
 #                         method = "heur",
 #                         ploidy = 4)
 
-## -----------------------------------------------------------------------------
-thinned_maplist.4x <- thinmap(maplist = phased_maplist.4x,
-                              dosage_matrix = SNP_dosages.4x)
+## ---- eval = FALSE------------------------------------------------------------
+#  thinned_maplist.4x <- thinmap(maplist = phased_maplist.4x,
+#                                dosage_matrix = SNP_dosages.4x)
+
+## ---- echo = FALSE------------------------------------------------------------
+cat("87 markers from a possible 93 on LG1 were included.
+
+89 markers from a possible 93 on LG2 were included.")
+
+## ---- out.width = "780px", echo = FALSE---------------------------------------
+knitr::include_graphics("figures/thinmap.png")
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  IBD_4x.spl <- spline_IBD(IBD_list = IBD_4x,

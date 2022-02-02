@@ -381,14 +381,22 @@ count_recombinations <- function(IBD_list,
 #' by the phased map, coded in 1 and 0 for presence/absence of SNP (alternative) allele on parental homologues (h) numbered 1:ploidy for parent 1
 #' and ploidy + 1 : 2*ploidy for parent 2.
 #' @examples
+#' \dontrun{
 #' library("mappoly")
 #' phased.maplist <- convert_mappoly_to_phased.maplist(maps.hexafake)
+#' }
 #' @export
 convert_mappoly_to_phased.maplist <- function(mappoly_object){
   
   if(class(mappoly_object) != "list") stop("list input expected!")
   
   ploidy <- mappoly_object[[1]]$info$ploidy
+  
+  ## The mappoly update 0.2.3 -> 0.3.0 changed this object's name from $m to $ploidy. 
+  ## Try to add backward compatibility with a test on ploidy for people still running mappoly v0.2.3 or earlier: 
+  if(length(ploidy) != 1 || !is.numeric(ploidy)){
+    ploidy <- mappoly_object[[1]]$info$m #this test should be redundant but failed CRAN testing r-oldrel-macos-x86_64
+  }
   
   nLG <- length(mappoly_object)
   
@@ -1500,6 +1508,7 @@ impute_dosages <- function(IBD_list,
 #' \item{maxL_IBD : }{ A nested list as would have been returned by the estimate_IBD function, but composite across error priors to maximise the 
 #' marginal likelihoods. Note that the $error values per linkage group are now the average error prior across the population per linkage group}
 #' \item{MML : }{ A 3d array of the maximal marginal likelihoods, per error prior. Dimensions are individuals, linkage groups, error priors.}
+#' \item{error_per_ind : }{ A matrix of the most likely genotyping error rates per individual (in rows) for each linkage group (in columns)}
 #' \item{errors : }{ The error priors used (i.e. the input vector is returned for later reference.)}
 #' }
 #' @examples
@@ -1514,7 +1523,7 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
   
   chkargs <- list(...)
   
-  if("error" %in% names(chkargs)) stop("Cannot specify argument error in this function, use
+  if("error" %in% names(chkargs)) stop("Cannot specify argument 'error' in this function, use
                                        argument 'errors' instead")
   if("method" %in% names(chkargs)){
     if(chkargs$method != "hmm") stop("This function only operates using method = 'hmm' (default)")
@@ -1527,13 +1536,20 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
   IBD.list <- setNames(lapply(errors, function(er){
     estimate_IBD(error = er,...)
   }),paste0("e_",errors))
+
+  # #debug:  
+  # IBD.list <- setNames(lapply(errors, function(er){
+  #   estimate_IBD(error = er,phased_maplist= phased_maplist.4x,
+  #                genotypes=SNP_dosages.4x,
+  #                ploidy=4)
+  # }),paste0("e_",errors))
   
   # extract maximal marginal likelihoods per error prior:
-  n.ind <- length(IBD.list[[1]]$LG1$offspring)
+  n.ind <- length(IBD.list[[1]][[1]]$offspring)
   mml.arr <- array(0,dim = c(n.ind,
                              length(IBD.list[[1]]),
                              length(errors)),
-                   dimnames = list(IBD.list[[1]]$LG1$offspring,
+                   dimnames = list(IBD.list[[1]][[1]]$offspring,
                                    names(IBD.list[[1]]),
                                    paste0("e_",errors)
                    ))
@@ -1572,9 +1588,15 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
     return(temp)
   }),
   names(IBD.list[[1]]))
+  # dim(mml.arr)
+  ## Extract the predicted errors per offspring, per LG:
+  error_per_ind <- as.matrix(sapply(1:length(IBD.list[[1]]), function(i) errors[apply(mml.arr[,i,],1,which.max)]))
+  colnames(error_per_ind) <- names(IBD.list[[1]])
+  rownames(error_per_ind) <- IBD.list[[1]][[1]]$offspring
   
   return(list(maxL_IBD = IBDout,
               MML = mml.arr,
+              error_per_ind = error_per_ind,
               errors = errors))
   
 } #maxL_IBD

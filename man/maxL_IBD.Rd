@@ -17,6 +17,7 @@ A list containing the following components:
 \item{maxL_IBD : }{ A nested list as would have been returned by the estimate_IBD function, but composite across error priors to maximise the 
 marginal likelihoods. Note that the $error values per linkage group are now the average error prior across the population per linkage group}
 \item{MML : }{ A 3d array of the maximal marginal likelihoods, per error prior. Dimensions are individuals, linkage groups, error priors.}
+\item{error_per_ind : }{ A matrix of the most likely genotyping error rates per individual (in rows) for each linkage group (in columns)}
 \item{errors : }{ The error priors used (i.e. the input vector is returned for later reference.)}
 }
 }
