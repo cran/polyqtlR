@@ -10,9 +10,10 @@ QTLscan(
   genotype.ID,
   trait.ID,
   block = NULL,
+  cofactor_df = NULL,
+  allelic_interaction = FALSE,
   folder = NULL,
   filename.short,
-  cofactor_df = NULL,
   prop_Pheno_rep = 0.5,
   perm_test = FALSE,
   N_perm.max = 1000,
@@ -35,11 +36,23 @@ QTLscan(
 
 \item{block}{The blocking factor to be used, if any (must be colname of \code{Phenotype.df}). By default \code{NULL}, in which case no blocking structure (for unreplicated experiments)}
 
-\item{folder}{If markers are to be used as co-factors, the path to the folder in which the imported IBD probabilities is contained can be provided here. By default this is \code{NULL}, if files are in working directory.}
+\item{cofactor_df}{A 3-column data frame of co-factor(s); column 1 gives the numeric linkage group identifier(s), 
+column 2 specifies the cM position of the co-factor(s), column 3 specifies whether the QTL was fitted using "a" = additive effects or 
+"f" = full allelic interactions (note that any other symbol for the full model will also be accepted, as long as it is not "a"). 
+For backward compatibility with package versions <= 0.0.9, it is possible to just supply the first two columns, 
+in which case an additive-effects model is assumed for each cofactor (so, a third column will be automatically filled with "a"). 
+By default \code{cofactor_df = NULL}, in which case no co-factors are included in the analysis.}
 
-\item{filename.short}{If TetraOrigin was used and co-factors are being included, the shortened stem of the filename of the \code{.csv} files containing the output of TetraOrigin, i.e. without the tail "_LinkageGroupX_Summary.csv" which is added by default to all output of TetraOrigin.}
+\item{allelic_interaction}{The QTL detection model can be for additive main effects only (by default \code{allelic_interaction = FALSE}). If \code{TRUE}, then the full model is used
+(i.e. all possible genotype combinations are included as predictors in the model). This runs the risk of overfitting, especially if double reduction was also allowed. 
+Both types of analyses can ideally be performed and compared. Note that if IBD probabilities were estimated using the "heuristic" method rather than the HMM method 
+(see \code{\link{estimate_IBD}}), then IBDs are actually haplotype probabilities rather than genotype probabilities, meaning that allelic interaction effects cannot be included in the model.}
 
-\item{cofactor_df}{A 2-column data frame of co-factor(s); column 1 gives linkage group identifiers, column 2 specifies the cM position of the co-factors. By default \code{NULL}, in which case no co-factors are included in the analysis.}
+\item{folder}{If markers are to be used as co-factors, the path to the folder in which the imported IBD probabilities is contained can be provided here. 
+By default this is \code{NULL}, if files are in working directory.}
+
+\item{filename.short}{If TetraOrigin was used and co-factors are being included, the shortened stem of the filename of the \code{.csv} files containing the output of TetraOrigin, 
+i.e. without the tail "_LinkageGroupX_Summary.csv" which is added by default to all output of TetraOrigin.}
 
 \item{prop_Pheno_rep}{The minimum proportion of phenotypes represented across blocks. If less than this, the individual is removed from the analysis. If there is incomplete
 data, the missing phenotypes are imputed using the mean values across the recorded observations.}
@@ -64,19 +77,20 @@ Use \code{parallel::detectCores()} to find out how many cores you have available
 }
 \value{
 A nested list; each list element (per linkage group) contains the following items:
-\itemize{
-\item{QTL.res : }{Single matrix of QTL results with columns chromosome, position, LOD, adj.r.squared and PVE (percentage variance explained).}
-\item{Perm.res : }{If \code{perm_test} = \code{FALSE}, this will be \code{NULL}.
+\describe{
+\item{QTL.res}{Single matrix of QTL results with columns chromosome, position, LOD, adj.r.squared and PVE (percentage variance explained).}
+\item{Perm.res}{If \code{perm_test} = \code{FALSE}, this will be \code{NULL}.
 Otherwise, Perm.res contains a list of the results of the permutation test, with list items
 "quantile","threshold" and "scores". Quantile refers to which quantile of scores was used to determine the threshold.
 Note that scores are each of the maximal LOD scores across the entire genome scan per permutation, thus returning a
 genome-wide threshold rather than a chromosome-specific threshold. If the latter is preferred, restricting the
 \code{IBD_list} to a single chromosome and re-running the permutation test will provide the desired threshold.}
-\item{Residuals : }{If a blocking factor or co-factors are used, this is the (named) vector of residuals used as input for the
+\item{Residuals}{If a blocking factor or co-factors are used, this is the (named) vector of residuals used as input for the
 QTL scan. Otherwise, this is the set of (raw) phenotypes used in the QTL scan.}
-\item{Map : }{Original map of genetic marker positions upon which the IBDs were based, most often used
+\item{Map}{Original map of genetic marker positions upon which the IBDs were based, most often used
 for adding rug of marker positions to QTL plots.}
-\item{LG_names : }{Names of the linkage groups}
+\item{LG_names}{Names of the linkage groups}
+\item{allelic_interaction}{Whether argument \code{allelic_interaction} was \code{TRUE} or \code{FALSE} in the QTL scan}
 }
 }
 \description{

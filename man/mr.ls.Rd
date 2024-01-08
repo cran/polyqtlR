@@ -3,7 +3,7 @@
 \docType{data}
 \name{mr.ls}
 \alias{mr.ls}
-\title{A list of pairing predictions (4x)}
+\title{Example output of meiosis report function}
 \format{
 An object of class \code{list} of length 2.
 }
@@ -11,6 +11,6 @@ An object of class \code{list} of length 2.
 mr.ls
 }
 \description{
-A list of pairing predictions (4x)
+Example output of meiosis report function
 }
 \keyword{datasets}

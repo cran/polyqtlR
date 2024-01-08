@@ -3,7 +3,7 @@
 \docType{data}
 \name{segList_4x}
 \alias{segList_4x}
-\title{A list of all possible bi-allelic QTL segregation types (4x)}
+\title{Expected segregation for all markers types of a tetraploid cross}
 \format{
 An object of class \code{list} of length 224.
 }
@@ -11,6 +11,6 @@ An object of class \code{list} of length 224.
 segList_4x
 }
 \description{
-A list of all possible bi-allelic QTL segregation types (4x)
+Expected segregation for all markers types of a tetraploid cross
 }
 \keyword{datasets}

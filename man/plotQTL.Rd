@@ -2,56 +2,180 @@
 % Please edit documentation in R/polyqtlR_functions.R
 \name{plotQTL}
 \alias{plotQTL}
-\title{Plot the results of a previous QTL analysis}
+\alias{plotLinearQTL}
+\alias{plotLinearQTL_list}
+\title{Plot the results of QTL scan.}
 \usage{
 plotQTL(
   LOD_data,
-  support_interval = 0,
+  layout = "l",
+  inter_chm_gap = 5,
   ylimits = NULL,
-  multiplot = NULL,
+  sig.unit = "LOD",
   plot_type = "lines",
-  overlay = FALSE,
+  colour = c("black", "red", "dodgerblue", "sienna4"),
   add_xaxis = TRUE,
   add_rug = TRUE,
+  add_thresh = TRUE,
+  override_thresh = NULL,
+  thresh.lty = 3,
+  thresh.lwd = 2,
+  thresh.col = "darkred",
+  return_plotData = FALSE,
+  show_thresh_CI = FALSE,
+  use_LG_names = TRUE,
+  axis_label.cex = 1,
+  custom_LG_names = NULL,
+  LGdiv.col = "gray42",
+  ylab.at = 2.5,
+  highlight_positions = NULL,
   mainTitle = FALSE,
-  log = NULL,
+  rescale = TRUE,
+  ...
+)
+
+plotLinearQTL(
+  LOD_data,
+  layout = "l",
+  inter_chm_gap = 5,
+  ylimits = NULL,
+  sig.unit = "LOD",
+  plot_type = "lines",
+  colour = c("black", "red", "dodgerblue", "sienna4"),
+  add_xaxis = TRUE,
+  add_rug = TRUE,
+  add_thresh = TRUE,
+  override_thresh = NULL,
+  thresh.lty = 3,
+  thresh.lwd = 2,
+  thresh.col = "darkred",
+  return_plotData = FALSE,
+  show_thresh_CI = FALSE,
+  use_LG_names = TRUE,
+  axis_label.cex = 1,
+  custom_LG_names = NULL,
+  LGdiv.col = "gray42",
+  ylab.at = 2.5,
+  highlight_positions = NULL,
+  mainTitle = FALSE,
+  rescale = TRUE,
+  ...
+)
+
+plotLinearQTL_list(
+  LOD_data,
+  layout = "l",
+  inter_chm_gap = 5,
+  ylimits = NULL,
+  sig.unit = "LOD",
+  plot_type = "lines",
+  colour = c("black", "red", "dodgerblue", "sienna4"),
+  add_xaxis = TRUE,
+  add_rug = TRUE,
+  add_thresh = TRUE,
+  override_thresh = NULL,
+  thresh.lty = 3,
+  thresh.lwd = 2,
+  thresh.col = "darkred",
+  return_plotData = FALSE,
+  show_thresh_CI = FALSE,
+  use_LG_names = TRUE,
+  axis_label.cex = 1,
+  custom_LG_names = NULL,
+  LGdiv.col = "gray42",
+  ylab.at = 2.5,
+  highlight_positions = NULL,
+  mainTitle = FALSE,
+  rescale = TRUE,
   ...
 )
 }
 \arguments{
-\item{LOD_data}{Output list from \code{\link{QTLscan}} with items QTL.res and Perm.res (the latter can be \code{NULL})}
+\item{LOD_data}{Output of \code{\link{QTLscan}} function. If you wish to overlay multiple genome-wide \code{QTLscan} outputs, then first compile these into a single list and 
+pass this to \code{LOD_data}, for example \code{LOD_data = list(qtl_res1, qtl_res2)}. If this is passed as a named list and \code{add_legend = TRUE}, these names will be used
+in the legend as well.}
 
-\item{support_interval}{Numeric. If 0 (by default) then there is no support interval returned. If greater than zero,
-then a LOD support interval is shown on output plot and the bounds are returned.}
+\item{layout}{There are three possible plot layouts - single chromosome plots ("s"), genome-wide plots arranged adjacently in a linear fashion ("l") which is
+also the default, and genome-wide plots arranged in a grid ("g"), i.e. a grid of single chromosome plots. In the latter case, a suitable grid dimension will be determined
+based on the number of linkage groups detected in \code{LOD_data}. If you wish to overlay results from multiple multi-chromosome analyses, use the default layout.}
+
+\item{inter_chm_gap}{The gap size (in units of cM) between successive chromosomes when \code{layout = "l"}. By default a gap of 5 cM is used. Normally the user should not need to change this.}
 
 \item{ylimits}{Use to specify ylimits of plot region, though by default \code{NULL} in which case a suitable plot region is automatically used.}
 
-\item{multiplot}{Vector of integers. By default \code{NULL}. If \code{LOD_data} contains results from multiple linkage groups, you can
-define the number of rows and columns in the plot layout.}
+\item{sig.unit}{Label to use on the y-axis for significance units, by default assumed to be LOD score.}
 
-\item{plot_type}{How should be plots be drawn, either "lines" or "points" are possible}
+\item{plot_type}{Plots can be either in line drawings ("lines", default) or scatter plot format ("points").}
 
-\item{overlay}{Add to an existing plot (should be produced by a comparable call to this function) or not? By default \code{FALSE},
-in which case a new plot is drawn. Can be useful for displaying results of multiple analyses together.}
+\item{colour}{Vector of colours to be used in the plotting. A default set of 4 colours is provided, the first of which is used when results from a single QTL scan are to be plotted.}
 
 \item{add_xaxis}{Should an x-axis be drawn? If multiple QTL analyses are performed on different traits, specifying this to be \code{FALSE}
 and using \code{par(mar=c(0,4.1,4.1,2.1))} allows subsequent plots to be neatly stacked.}
 
 \item{add_rug}{Logical, by default \code{TRUE} - should original marker points be added to plot?}
 
-\item{mainTitle}{Vector of plot titles (single character vector also allowed and will be recycled). For no plot titles, leave as \code{FALSE}}
+\item{add_thresh}{Logical, by default \code{TRUE} - should a significance threshold be added to plot?}
 
-\item{log}{Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.}
+\item{override_thresh}{By default \code{NULL}. Can be used to specify a (numeric) value for the significance threshold, overriding any stored in \code{LOD_data}. If you wish to override
+thresholds for multiple analyses (so, when \code{LOD_data} is a list of QTL outputs), can also provide a vector of numeric values here.}
 
-\item{\dots}{Extra arguments passed to plotting functions (plot, lines / points)}
+\item{thresh.lty}{Gives user control over the line type of the significance threshold to be drawn. Default threshold lty is 3.}
+
+\item{thresh.lwd}{Gives user control over the line width of the significance threshold to be drawn. Default threshold lwd is 2.}
+
+\item{thresh.col}{Gives user control over the line colour of the significance threshold to be drawn. Default threshold colour is dark red. If plotting multiple analyses with \code{rescale = FALSE},
+it can be useful to provide the same colours to this argument as to \code{colour}, so that LOD profiles can be linked to their respective LOD thresholds.}
+
+\item{return_plotData}{Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned when \code{layout = "l"},
+which can be useful for subsequent plot manipulations and overlays. For other layouts, no plot data is returned.}
+
+\item{show_thresh_CI}{Logical, by default \code{FALSE}. Should confidence interval bounds around LOD threshold be shown if available? If \code{LOD_data} is a list from multiple analyses,
+this option is ignored to prevent plot becoming too cluttered.}
+
+\item{use_LG_names}{Logical, by default \code{TRUE}. Should original character LG names (the names of list \code{LOD_data}) be used as axis labels? If \code{FALSE}, numbering is used instead.}
+
+\item{axis_label.cex}{Argument to adjust the size of the axis labels. Can be useful if there are many linkage groups to plot}
+
+\item{custom_LG_names}{Option to specify a vector that contains custom linkage group names. By default \code{NULL}. See previous argument \code{use_LG_names}, which is the usual manner
+for controlling x-axis labels.}
+
+\item{LGdiv.col}{Colour of dividing lines between linkage groups when \code{layout = "l"}, by default grey.}
+
+\item{ylab.at}{Distance from the y-axis to place label (by default at 2.5 points)}
+
+\item{highlight_positions}{Option to include a (list of) positions to highlight (e.g. peak QTL positions). Each list element should be a 2-column data.frame with columns giving
+the linkage group numbers (numeric) and the corresponding cM positions (numeric) to highlight. If \code{LOD_data} is the result of a single genome-wide scan, it is also possible to just directly provide the
+2-column data.frame (again, with column 1 containing linkage group numbers and column 2 containing corresponding cM positions).
+If \code{LOD_data} has been provided as a list of multiple analyses, you may wish to highlight different positions from each analysis. Then \code{highlight_positions} should also be a list 
+of the same length and in the same order as \code{LOD_data}. Each data.frame of positions will be coloured in the same colour as the LOD output.
+If no position is to be highlighted for some analyses, add the corresponding list element as \code{NULL}. For example, if you wish to highlight positions for analyses 1 and 3 in a 3-analysis overlay, 
+then use something like \code{highlight_positions = list(data.frame(lg = 1, cM = 50),NULL,data.frame(lg=c(2,3),cM=c(11,99)))}.
+The default setting is \code{NULL}, meaning no positions are highlighted.}
+
+\item{mainTitle}{Option to supply vector of plot titles if \code{layout = "s"} or \code{layout = "g"}. Argument ignored if using the default layout. Single character vector also allowed and will be recycled.
+For no plot titles, leave as default, i.e. \code{FALSE}}
+
+\item{rescale}{If results from multiple analyses are to be overlaid and different significance thresholds are detected, then by default plots will be rescaled so that threshold lines overlap.
+This behaviour can be disabled by setting \code{rescale = FALSE}.}
+
+\item{\dots}{Arguments passed to \code{\link{plot}}, and \code{\link{lines}} or \code{\link{points}} as appropriate (see argument \code{plot_type}).}
 }
 \value{
-The cM bounds of the LOD support interval, if \code{support_interval} > 0.
+The plot data, if return_plotData = TRUE. Otherwise \code{NULL}. Output is returned invisibly
 }
 \description{
-Basic QTL plotting function, taking map positions and significance levels as input
+Up to package v.0.0.9, there were three plotting functions for the output of \code{QTLscan}, namely \code{plotQTL}, \code{plotLinearQTL} and \code{plotLinearQTL_list}.
+Since release 0.1.0, the functionality of all three functions has been combined into a single general plotting function, named \code{plotQTL}.
+The plot layout is now specified by a new argument \code{layout}, allowing the user to plot results for single chromosomes separately, or together either adjacently or in a grid layout.
+Results from multiple analyses can be overlaid. Previously, it was possible to call the function \code{plotQTL} multiple times and overlay subsequent plots using the argument \code{overlay = TRUE}.
+This approach is no longer supported. Instead, if multiple results are to be overlaid, they can be provided as a list of \code{QTLscan} or \code{singleMarkerRegression} outputs. Note however that this
+is only possible using the default layout. If significance thresholds are
+present, the default behaviour is to rescale LOD values so that multiple plots can be combined with overlapping signficance thresholds. This rescaling behaviour can also be
+disabled (by setting \code{rescale = FALSE}). Note that not all arguments may be appropriate for all layouts.
 }
 \examples{
+\dontrun{
 data("qtl_LODs.4x")
-plotQTL(LOD_data = qtl_LODs.4x,multiplot = c(1,2),ylimits = c(0,5), plot_type = "points")
+plotQTL(LOD_data = qtl_LODs.4x,layout = "l")
+}
 }

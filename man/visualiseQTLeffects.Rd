@@ -15,6 +15,8 @@ visualiseQTLeffects(
   col.pal = c("purple4", "white", "seagreen"),
   point.density = 50,
   zero.sum = FALSE,
+  allelic_interaction = FALSE,
+  exploreQTL_output = NULL,
   return_plotData = FALSE
 )
 }
@@ -42,6 +44,11 @@ effects will be coloured from purple to green through white.}
 
 \item{zero.sum}{How allele substitution effect should be defined. If \code{FALSE} (by default), the effect of each homologue
 is computed relative to the overall phenotypic mean, otherwise contrasts (against offspring without the inherited homologue) are used.}
+
+\item{allelic_interaction}{By default \code{FALSE}, in which case the additive effects of parental alleles are visualised. If \code{TRUE}, a plot of
+the mean effect of combinations of parental alleles is visualised instead. \code{exploreQTL_output} is required in this case.}
+
+\item{exploreQTL_output}{If \code{allelic_interaction = TRUE}, the output of the function \code{\link{exploreQTL}} must be provided.}
 
 \item{return_plotData}{Logical, by default \code{FALSE}. If \code{TRUE}, plot data is returned, otherwise \code{NULL}.}
 }

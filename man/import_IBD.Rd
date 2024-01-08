@@ -2,25 +2,31 @@
 % Please edit documentation in R/polyqtlR_functions.R
 \name{import_IBD}
 \alias{import_IBD}
-\title{Import IBD probabilities as estimated by TetraOrigin}
+\title{Import IBD probabilities as estimated by TetraOrigin or PolyOrigin}
 \usage{
 import_IBD(
+  method,
   folder = NULL,
-  filename.vec,
+  filename,
   bivalent_decoding = TRUE,
   error = 0.01,
   log = NULL
 )
 }
 \arguments{
-\item{folder}{The path to the folder in which the TetraOrigin output is contained, default is \code{NULL} if files are in working directory.}
+\item{method}{The method used for IBD estimation, either "TO" for TetraOrigin or "PO" for PolyOrigin}
 
-\item{filename.vec}{A vector of the character filename(s) of the \code{.csv} file(s) containing the output of TetraOrigin. Should be in order according to LG/chromosome numbering.}
+\item{folder}{The path to the folder in which the Tetra/PolyOrigin (ie. TetraOrigin or PolyOrigin) output is contained, 
+default is \code{NULL} if files are in working directory.}
 
-\item{bivalent_decoding}{Logical, if \code{TRUE} then only bivalent pairing was allowed in TetraOrigin,
-specify \code{FALSE} if multivalent pairing was also allowed.}
+\item{filename}{If method = "TO", the (vector of) character filename stem(s) of the \code{.csv} file(s) containing the output of TetraOrigin (stem = without ".csv"). 
+Should be in order according to LG/chromosome numbering. If method = "PO", then simply specify the PolyOrigin filename stem here (as the output is not split into separate linkage
+groups in PolyOrigin). A PolyOrigin file with name <filename>_polyancestry.csv and its corresponding log file <filename>.log will then be searched for.}
 
-\item{error}{The offspring error prior used in the offspring decoding step, here assumed to be 0.01}
+\item{bivalent_decoding}{Logical, if method = "TO" you must specify \code{TRUE} if only bivalent pairing was allowed in TetraOrigin (in offspring deciding step),
+otherwise specify \code{FALSE} if multivalent pairing was also allowed. If method = "PO", this will be automatically detected, so no need to specify (will be ignored).}
+
+\item{error}{If method = "TO", the offspring error prior used in the offspring decoding step of TetraOrigin, by default assumed to be 0.01. For method = "PO", this is automatically read in.}
 
 \item{log}{Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.}
 }
@@ -34,15 +40,26 @@ Returns a list with the following items:
 \item{valency : }{The predicted valency that maximised the marginal likelihood, per offspring. Currently \code{NULL}}
 \item{offspring : }{Offspring names}
 \item{biv_dec : }{Logical, the bivalent_decoding parameter specified.}
-\item{gap : }{The gap size used in IBD interpolation, by default \code{NULL}. See \code{\link{spline_IBD}}}
+\item{gap : }{The gap size used in IBD interpolation if performed by \code{\link{spline_IBD}}. At this stage, \code{NULL}}
 \item{genocodes : }{Ordered list of genotype codes used to represent different genotype classes.}
-\item{pairing : }{log likelihoods of each of the different pairing scenarios considered (can be used e.g. for post-mapping check of preferential pairing)}
+\item{pairing : }{log likelihoods of each of the different pairing scenarios considered 
+(can be used e.g. for post-mapping check of preferential pairing)}
 \item{ploidy : }{The ploidy of parent 1, by default assumed to be 4}
 \item{ploidy2 : }{The ploidy of parent 2, by default assumed to be 4}
-\item{method : }{The method used, always returned as "hmm_TO" (Hidden Markov Model TetraOrigin)}
-\item{error : }{The error prior used in the calculation, assumed to be 0.01}
+\item{method : }{The method used, either "hmm_TO" (TetraOrigin) or "hmm_PO" (PolyOrigin)}
+\item{error : }{The error prior used in the calculation in TetraOrigin, assumed to be 0.01}
 }
 \description{
-Imports the summarised IBD probability output of TetraOrigin (which estimates IBD probabilities at all
-marker positions), and interpolates these at a grid of positions at user-defined spacing.
+Imports the IBD probability output of TetraOrigin (Mathematica software) or PolyOrigin (julia software) into the same
+format as natively-estimated IBD probabilities from the polyqtlR package.
+}
+\examples{
+\dontrun{
+## These examples demonstrate the function call for both methods, but won't run without input files
+## from either package, hence this call will normally result in an Error:
+IBD_TO <- import_IBD(method = "TO", filename = paste0("test_LinkageGroup",1:5,"_Summary"),
+bivalent_decoding = FALSE, error = 0.05)
+## Equivalent call for PolyOrigin output:
+IBD_PO <- import_IBD(method = "PO",filename = "test")
+}
 }

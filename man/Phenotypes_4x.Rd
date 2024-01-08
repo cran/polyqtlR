@@ -3,7 +3,7 @@
 \docType{data}
 \name{Phenotypes_4x}
 \alias{Phenotypes_4x}
-\title{A data-frame of phenotypes (4x)}
+\title{Phenotypes for example tetraploid}
 \format{
 An object of class \code{data.frame} with 150 rows and 3 columns.
 }
@@ -11,6 +11,6 @@ An object of class \code{data.frame} with 150 rows and 3 columns.
 Phenotypes_4x
 }
 \description{
-A data-frame of phenotypes (4x)
+Phenotypes for example tetraploid
 }
 \keyword{datasets}

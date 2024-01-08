@@ -3,7 +3,7 @@
 \docType{data}
 \name{GIC_4x}
 \alias{GIC_4x}
-\title{A list of GIC estimates (4x)}
+\title{Genotypic Information Coefficient for example tetraploid}
 \format{
 An object of class \code{list} of length 2.
 }
@@ -11,6 +11,6 @@ An object of class \code{list} of length 2.
 GIC_4x
 }
 \description{
-A list of GIC estimates (4x)
+Genotypic Information Coefficient for example tetraploid
 }
 \keyword{datasets}

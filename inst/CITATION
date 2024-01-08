@@ -1,0 +1,20 @@
+bibentry(
+  bibtype  = "Article",
+  title    = "Detecting quantitative trait loci and exploring chromosomal pairing in autopolyploids using polyqtlR",
+  author   = c(person(c("Peter","M."), "Bourke"),
+               person(c("Roeland","E."), "Voorrips"),
+               person(c("Christine","A."),"Hackett"),
+               person("Geert",c("van","Geest")),
+               person(c("Johan","H."),"Willemsen"),
+               person("Arens","Paul"),
+               person(c("Marinus","J.M."),"Smulders"),
+               person(c("Richard","G.F."),"Visser"),
+               person("Chris","Maliepaard")
+               ),
+  journal  = "Bioinformatics",
+  year     = "2021",
+  volume   = "37",
+  number   = "21",
+  pages    = "3822-3829",
+  doi      = "10.1093/bioinformatics/btab574"
+)

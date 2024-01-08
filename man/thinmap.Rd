@@ -11,6 +11,7 @@ thinmap(
   bounds = NULL,
   remove_markers = NULL,
   plot_maps = TRUE,
+  use_SN_phase = FALSE,
   parent1 = "P1",
   parent2 = "P2",
   log = NULL
@@ -30,6 +31,9 @@ is limited to a specific region, which may be useful if fine-mapping a region of
 \item{remove_markers}{Optional vector of marker names to remove from the maps. Default is \code{NULL}.}
 
 \item{plot_maps}{Logical. Plot the marker positions of the selected markers using \code{polymapR::plot_map}.}
+
+\item{use_SN_phase}{Logical, by default \code{FALSE}. If \code{TRUE}, then 1x0 and 0x1 are binned per phase, to increase coverage of these
+marker types across parental homologues. If not, at most one of each are retained per bin.}
 
 \item{parent1}{Identifier of parent 1, by default assumed to be \code{"P1"}}
 

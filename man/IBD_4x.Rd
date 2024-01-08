@@ -3,7 +3,7 @@
 \docType{data}
 \name{IBD_4x}
 \alias{IBD_4x}
-\title{A list of identity-by-descent probabilities (4x)}
+\title{Identical by descent probabilities for example tetraploid}
 \format{
 An object of class \code{list} of length 2.
 }
@@ -11,6 +11,6 @@ An object of class \code{list} of length 2.
 IBD_4x
 }
 \description{
-A list of identity-by-descent probabilities (4x)
+Identical by descent probabilities for example tetraploid
 }
 \keyword{datasets}

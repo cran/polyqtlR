@@ -29,14 +29,20 @@ data("phased_maplist.4x", "SNP_dosages.4x", "Phenotypes_4x")
 nc <- 2 #to pass CRAN checks
 
 ## ---- eval = FALSE------------------------------------------------------------
-#  IBD_4x <- import_IBD(folder = "TetraOrigin",
-#                       filename.vec = paste0("TetraOrigin_Output_bivs_LinkageGroup",1:5,"_Summary"),
+#  IBD_4x <- import_IBD(method = "TO", #TO for TetraOrigin
+#                       folder = "TetraOrigin",
+#                       filename = paste0("TetraOrigin_Output_bivs_LinkageGroup",1:5,"_Summary"),
 #                       bivalent_decoding = TRUE)
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  Importing map data under description inferTetraOrigin-Summary,Genetic map of biallelic markers
 #  Importing parental phasing under description inferTetraOrigin-Summary,MAP of parental haplotypes
 #  Importing IBD data under description inferTetraOrigin-Summary,Conditonal genotype probability
+
+## ---- eval = FALSE------------------------------------------------------------
+#  IBD_4x <- import_IBD(method = "PO", #PO for PolyOrigin
+#                       folder = "PolyOrigin",
+#                       filename = "PolyOrigin_Output")
 
 ## ----eval=FALSE---------------------------------------------------------------
 #  IBD_4x <- estimate_IBD(phased_maplist = phased_maplist.4x,
@@ -103,14 +109,14 @@ head(Phenotypes_4x)
 ## ----echo = FALSE-------------------------------------------------------------
 qtl_LODs.4x <- readRDS("qtl_LODs.4x.RDS")
 
-## -----------------------------------------------------------------------------
+## ---- fig.align='center',fig.height=10----------------------------------------
 plotQTL(LOD_data = qtl_LODs.4x,
-        multiplot = c(1,2), #1 row, 2 columns
-        col = "darkgreen")
+        layout = "g",
+        colour = "darkgreen")
 
 ## -----------------------------------------------------------------------------
-plotLinearQTL(LOD_data = qtl_LODs.4x,
-              col = "dodgerblue")
+plotQTL(LOD_data = qtl_LODs.4x,
+        colour = "dodgerblue")
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  qtl_LODs.4x <- QTLscan(IBD_list = IBD_4x,
@@ -125,8 +131,8 @@ plotLinearQTL(LOD_data = qtl_LODs.4x,
 qtl_LODs.4x <- readRDS("qtl_LODs.4x_perm.RDS")
 
 ## -----------------------------------------------------------------------------
-plotLinearQTL(LOD_data = qtl_LODs.4x,
-              col = "dodgerblue")
+plotQTL(LOD_data = qtl_LODs.4x,
+        colour = "dodgerblue")
 
 ## -----------------------------------------------------------------------------
 blues <- BLUE(data = Phenotypes_4x,
@@ -146,8 +152,8 @@ blues <- BLUE(data = Phenotypes_4x,
 qtl_LODs.4x <- readRDS("qtl_LODs.4x_fastpermute.RDS")
 
 ## -----------------------------------------------------------------------------
-plotLinearQTL(LOD_data = qtl_LODs.4x,
-              col = "dodgerblue")
+plotQTL(LOD_data = qtl_LODs.4x,
+        colour = "dodgerblue")
 
 ## -----------------------------------------------------------------------------
 findPeak(qtl_LODs.4x, linkage_group = 1)
@@ -189,8 +195,8 @@ blues <- BLUE(data = new_pheno,
 qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cof_fastpermute.RDS")
 
 ## -----------------------------------------------------------------------------
-plotLinearQTL(LOD_data = qtl_LODs.4x_cofactor,
-              col = "red")
+plotQTL(LOD_data = qtl_LODs.4x_cofactor,
+        colour = "red")
 
 ## ----eval = FALSE-------------------------------------------------------------
 #  blues <- BLUE(data = Phenotypes_4x,
@@ -224,9 +230,8 @@ PVE(IBD_list = IBD_4x,
     QTL_df = QTLmodel)
 
 ## -----------------------------------------------------------------------------
-plotLinearQTL_list(LOD_data.ls = list(qtl_LODs.4x,
-                                      qtl_LODs.4x_cofactor),
-                   plot_type = "lines")
+plotQTL(LOD_data = list(qtl_LODs.4x,
+                        qtl_LODs.4x_cofactor))
 
 ## -----------------------------------------------------------------------------
 blues <- BLUE(data = Phenotypes_4x,
@@ -292,11 +297,11 @@ knitr::include_graphics("figures/fish_hom1.png")
 qtl_SMR.4x <- readRDS("qtl_SMR.4x.RDS")
 
 ## -----------------------------------------------------------------------------
-plotLinearQTL_list(LOD_data.ls =  list(qtl_LODs.4x,
-                                       qtl_SMR.4x),
-                   plot_type = c("lines","points"), #IBD results as lines, SMR results as points..
-                   pch = 19,
-                   colours = c("darkgreen","navyblue"))
+plotQTL(LOD_data =  list(qtl_LODs.4x,
+                         qtl_SMR.4x),
+        plot_type = c("lines","points"), #IBD results as lines, SMR results as points..
+        pch = 19,
+        colour = c("darkgreen","navyblue"))
 
 ## -----------------------------------------------------------------------------
 PVE(IBD_list = IBD_4x,

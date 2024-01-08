@@ -4,12 +4,7 @@
 \alias{meiosis_report}
 \title{Generate a 'report' of predicted meiotic behaviour in an F1 population}
 \usage{
-meiosis_report(
-  IBD_list,
-  visualise = FALSE,
-  plausible_pairing_prob = 0.9,
-  precision = 2
-)
+meiosis_report(IBD_list, visualise = FALSE, precision = 2)
 }
 \arguments{
 \item{IBD_list}{List of IBD probabilities as estimated by \code{\link{estimate_IBD}} using method 'hmm', or externally (e.g. using TetraOrigin)}
@@ -19,25 +14,23 @@ flag extreme deviations from the expected numbers (associated with polysomic inh
 barplots are coloured according to the level of significance of the X2 test. Plots showing red bars indicate extreme deviations from
 a polysomic pattern.}
 
-\item{plausible_pairing_prob}{The minimum probability of a pairing configuration needed to analyse an individual's IBD data.}
-
 \item{precision}{To how many decimal places should summed probabilities per bivalent pairing be rounded? By default 2.}
 }
 \value{
 The function returns a nested list, with one element per linkage group in the same order as the input IBD list.
 Per linkage group, a list is returned containing the following components:
-\itemize{
-\item{P1_multivalents:  The count of multivalents in parent 1 (only relevant if \code{bivalent_decoding = FALSE} during IBD calculation)}
-\item{P2_multivalents:  Similarly, the count of multivalents in parent 2}
-\item{P1_pairing:  The counts of each bivalent pairing predicted in parent 1, with an extra column Pr(X2) which gives the p-value of 
+\describe{
+\item{P1_multivalents}{The count of multivalents in parent 1 (only relevant if \code{bivalent_decoding = FALSE} during IBD calculation)}
+\item{P2_multivalents}{Similarly, the count of multivalents in parent 2}
+\item{P1_pairing}{The counts of each bivalent pairing predicted in parent 1, with an extra column Pr(X2) which gives the p-value of 
 the X2 test of the off-diagonal terms in the matrix. In the case of a tetraploid, pairing A with B automatically implies C with D pairing,
 so the count table contains a lot of redundancy. The table should be read using both row and column names, so row A and column B corresponds
 to the count of individuals with A and B pairing (and hence C and D pairing). In a hexaploid, A-B pairing does not imply a particular pairing
 configuration in the remaining homologues. In this case, row A and column B is the count of individuals where A and B were predicted to have paired,
 summed over all three bivalent configurations with A and B paired (AB-CD-EF, AB-CE-DF, AB-CF,DE).}
-\item{P2_pairing:  Same as P1_pairing, except using parent 2}
-\item{ploidy:  The ploidy of parent 1}
-\item{ploidy2:  The ploidy of parent 2}
+\item{P2_pairing}{Same as P1_pairing, except using parent 2}
+\item{ploidy}{The ploidy of parent 1}
+\item{ploidy2}{The ploidy of parent 2}
 }
 }
 \description{

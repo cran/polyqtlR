@@ -1,11 +1,3 @@
-#' QTL analysis in polyploid species using identity-by-descent probabilities
-#'
-#' R package to perform QTL analysis using marker data from polyploid species.
-#' @docType package
-#' @name polyqtlR
-#' @import utils stats foreach grDevices graphics knitr
-NULL
-
 #' Calculate Best Linear Unbiased Estimates using linear mixed model from \code{nlme} package
 #' @description Calculation of BLUEs from data frame of genotype names and phenotypes (assuming repeated measurements)
 #' @param data Data frame of genotype codes and corresponding phenotypes
@@ -32,7 +24,15 @@ BLUE <- function(data,
   blue <- lmeRES$coef$fixed
   blue <- c(blue[1], blue[-1] + blue[1]) #Add the intercept term, then remove it
   
-  names(blue)[2:length(blue)] <- gsub(genotype.ID, "", names(blue)[2:length(blue)])
+  ## This causes an error if e.g. genotype.ID = "F1" and all offspring are F1_001 etc:
+  # names(blue)[2:length(blue)] <- gsub(genotype.ID, "", names(blue)[2:length(blue)])
+  
+  n1 <- nchar(genotype.ID)
+  n2 <- nchar(names(blue)[2:length(blue)])
+  
+  names(blue)[2:length(blue)] <- substr(x = names(blue)[2:length(blue)],
+                                        start = n1 + 1,
+                                        stop = n2)
   names(blue)[1] <- setdiff(unique(data[,genotype.ID]),names(blue)[2:length(blue)])
   
   return(data.frame("geno" = names(blue),
@@ -53,19 +53,22 @@ BLUE <- function(data,
 #' @param Phenotype.df A data.frame containing phenotypic values
 #' @param genotype.ID The colname of \code{Phenotype.df} that contains the population identifiers (F1 names) (must be a colname of \code{Phenotype.df})
 #' @param trait.ID The colname of \code{Phenotype.df} that contains the response variable to use in the model (must be a colname of \code{Phenotype.df})
-#' @param LOD_data Output of \code{\link{QTLscan}} function.
+#' @param LOD_data Output of \code{\link{QTLscan}} function. Since v.0.1.0 this argument is optional - function will re-run a \code{QTLscan} if not provided.
 #' @param min_res The minimum genetic distance (resolution) assumed possible to consider 2 linked QTL (on the same linkage group) as independent. By default a value of 20 cM is used.
 #' This is not to suggest that 20 cM is a realistic resolution in a practical mapping study, but it provides the function with a criterion to consider 2 significant QTL within this distance as one and the same. 
 #' For this purpose, 20 cM seems a reasonable value to use. In practice, closely linked QTL will generally "explain" all the variation at nearby positions, making it unlikely to
 #' be able to disentangle their effects. QTL positions will vary slightly when co-factors are introduced, but again this variation is presumed not to exceed 20 cM either side.
-#' @param ncores How many CPU cores should be used in the evaluation? By default 1 core is used.
+#' @param test_full_model By default \code{FALSE}, in which case the normal additive-effects model is used in \code{\link{QTLscan}}. If set to \code{TRUE},
+#' then both the additive and full models are run for each genome-wide scan. 
 #' @param verbose Logical, by default \code{TRUE} - should progress messages be printed to the console?
+#' @param \dots Option to pass extra arguments to \code{QTLscan}, for example specifying \code{ncores} for parallel processing, or changing
+#' the default settings of the permutation test (by default the number of permutations to perform = 1000 and alpha = 0.05). For a full list of options see the documentation of \code{\link{QTLscan}}.
 #' @return Data frame with the following columns:
-#' \itemize{
-#' \item{LG: }{ Linkage group identifier}
-#' \item{cM: }{ CentiMorgan position}
-#' \item{deltaLOD: }{ The difference between the LOD score at the peak and the significance threshold (always positive, otherwise the QTL would not be significant)}
-#' \item{CofactorID: }{ A identifier giving the co-factor model used in detecting the QTL (if no co-factors were included then \code{NA}). The co-factor model is described
+#' \describe{
+#' \item{LG}{Linkage group identifier}
+#' \item{cM}{CentiMorgan position}
+#' \item{deltaLOD}{The difference between the LOD score at the peak and the significance threshold (always positive, otherwise the QTL would not be significant)}
+#' \item{CofactorID}{An identifier giving the co-factor model used in detecting the QTL (if no co-factors were included then \code{NA}). The co-factor model is described
 #' by concatenating all co-factor positions with a '+', so for example 1_10+4_20 would mean a co-factor model with 2 positions included as co-factors, namely 10 cM on linkage
 #' group 1 and 20 cM on linkage group 4.}
 #' }
@@ -78,16 +81,31 @@ check_cofactors <- function(IBD_list,
                             Phenotype.df,
                             genotype.ID,
                             trait.ID,
-                            LOD_data,
+                            LOD_data = NULL,
                             min_res = 20,
-                            ncores = 1,
-                            verbose = TRUE){
+                            test_full_model = FALSE,
+                            verbose = TRUE,
+                            ...){
+  
+  if(is.null(LOD_data)){ #The user has not provided output from a QTL scan
+    if(verbose) message(paste0("No LOD_data detected. Running an initial QTL scan (with argument allelic_interaction = ",test_full_model,")..."))
+    
+    LOD_data <- QTLscan(IBD_list = IBD_list,
+                        Phenotype.df = Phenotype.df,
+                        genotype.ID = genotype.ID,
+                        trait.ID = trait.ID,
+                        perm_test = TRUE,
+                        allelic_interaction = test_full_model,
+                        verbose = verbose,
+                        ...)
+  }
+  
   ## Initial checks
   if(is.null(LOD_data$Perm.res)) stop("This function only fits significant QTL positions as co-factors. Please re-run QTLscan with perm_test = TRUE to check significance.")
   
   if(length(which(LOD_data$QTL.res$LOD > LOD_data$Perm.res$threshold)) == 0) stop("This function only fits significant QTL positions as co-factors. If you still want to add non-significant positions as co-factors, use function QTLscan instead.")
   
-  qtl.df <- findQTLpeaks(LOD_data)
+  qtl.df <- findQTLpeaks(LOD_data) #qtl.df <- polyqtlR:::findQTLpeaks(LOD_data) #debugging
   
   ## For safety (should have been caught in last check..)
   if(nrow(qtl.df) == 0) stop("This function only fits significant QTL positions as co-factors. If you still want to add non-significant positions as co-factors, use function QTLscan instead.")
@@ -99,29 +117,66 @@ check_cofactors <- function(IBD_list,
   
   if(verbose) message("Searching for extra QTL given detected co-factors....")
   
-  fullQTL <- do.call(rbind,lapply(QTLmodel.list, function(q_mat){
-    do.call(rbind,apply(q_mat,2,function(sub_q){
+  ## Define an internal function for fitting cofactor, used 4 times susequently:
+  fit_cofactor <- function(ibds,
+                           phenos,
+                           genoID,
+                           traitID,
+                           cofdf,
+                           ai){
+    
+    temp.QTL <- QTLscan(IBD_list = ibds,
+                        Phenotype.df = phenos,
+                        genotype.ID = genoID,
+                        trait.ID = traitID,
+                        cofactor_df = cofdf,
+                        allelic_interaction = ai,
+                        verbose = FALSE,
+                        ...)
+    
+    resids <- temp.QTL$Residuals
+    
+    temp.QTL <- QTLscan(IBD_list = ibds,
+                        Phenotype.df = resids,
+                        genotype.ID = genoID,
+                        trait.ID = "Pheno",
+                        perm_test = TRUE,
+                        allelic_interaction = ai,
+                        verbose = FALSE,
+                        ...)
+    
+    temp_qtl.df <- findQTLpeaks(temp.QTL) #temp_qtl.df <- polyqtlR:::findQTLpeaks(temp.QTL) #debugging
+    
+    return(temp_qtl.df)
+  }
+  
+  fullQTL <- do.call(rbind,lapply(QTLmodel.list, function(q_mat = QTLmodel.list[[1]]){
+    do.call(rbind,apply(q_mat,2,function(sub_q = 1){
       
-      temp.QTL <- QTLscan(IBD_list = IBD_list,
-                          Phenotype.df = Phenotype.df,
-                          genotype.ID = genotype.ID,
-                          trait.ID = trait.ID,
-                          cofactor_df = qtl.df[sub_q,],
-                          verbose = FALSE)
+      temp_qtl.df <- fit_cofactor(ibds = IBD_list,
+                                  phenos = Phenotype.df,
+                                  genoID = genotype.ID,
+                                  traitID = trait.ID,
+                                  cofdf = qtl.df[sub_q,],
+                                  ai = FALSE) #run first with allelic_interaction = FALSE
       
-      resids <- temp.QTL$Residuals
       
-      temp.QTL <- QTLscan(IBD_list = IBD_list,
-                          Phenotype.df = resids,
-                          genotype.ID = genotype.ID,
-                          trait.ID = "Pheno",
-                          perm_test = TRUE,
-                          ncores = ncores,
-                          verbose = FALSE)
+      if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),"a",sep="_"),collapse="+")
       
-      temp_qtl.df <- findQTLpeaks(temp.QTL)
-      
-      if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),sep="_"),collapse="+")
+      ## Runs if user would like QTL model with allelic interactions to also be checked (v.0.1.0):
+      if(test_full_model){
+        temp_qtl.df2 <- fit_cofactor(ibds = IBD_list,
+                                     phenos = Phenotype.df,
+                                     genoID = genotype.ID,
+                                     traitID = trait.ID,
+                                     cofdf = qtl.df[sub_q,],
+                                     ai = TRUE) #re-run with allelic_interaction = TRUE
+        
+        
+        if(nrow(temp_qtl.df2) > 0) temp_qtl.df2$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),"f",sep="_"),collapse="+")
+        
+        temp_qtl.df <- rbind(temp_qtl.df,temp_qtl.df2)
+      }
       
       return(temp_qtl.df)
     }))
@@ -168,36 +223,38 @@ check_cofactors <- function(IBD_list,
       return(out)
     })
     
-    
     refinedQTL2 <- do.call(rbind,lapply(QTLmodel.list2, function(q_mat){
       do.call(rbind,apply(q_mat,2,function(sub_q){
         
-        temp.QTL <- QTLscan(IBD_list = IBD_list,
-                            Phenotype.df = Phenotype.df,
-                            genotype.ID = genotype.ID,
-                            trait.ID = trait.ID,
-                            cofactor_df = refinedQTL[sub_q,],
-                            verbose = FALSE)
+        temp_qtl.df <- fit_cofactor(ibds = IBD_list,
+                                    phenos = Phenotype.df,
+                                    genoID = genotype.ID,
+                                    traitID = trait.ID,
+                                    cofdf = refinedQTL[sub_q,],
+                                    ai = FALSE)
         
-        resids <- temp.QTL$Residuals
         
-        temp.QTL <- QTLscan(IBD_list = IBD_list,
-                            Phenotype.df = resids,
-                            genotype.ID = genotype.ID,
-                            trait.ID = "Pheno",
-                            perm_test = TRUE,
-                            ncores = ncores,
-                            verbose = FALSE)
+        if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(refinedQTL$LG[sub_q],round(refinedQTL$cM[sub_q],2),"a",sep="_"),collapse="+")
         
-        temp_qtl.df <- findQTLpeaks(temp.QTL)
+        ## Runs if user would like QTL model with allelic interactions to also be checked (v.0.1.0):
+        if(test_full_model){
+          temp_qtl.df2 <- fit_cofactor(ibds = IBD_list,
+                                       phenos = Phenotype.df,
+                                       genoID = genotype.ID,
+                                       traitID = trait.ID,
+                                       cofdf = refinedQTL[sub_q,],
+                                       ai = TRUE)
+          
+          
+          if(nrow(temp_qtl.df2) > 0) temp_qtl.df2$CofactorID <- paste(paste(refinedQTL$LG[sub_q],round(refinedQTL$cM[sub_q],2),"f",sep="_"),collapse="+")
+          
+          temp_qtl.df <- rbind(temp_qtl.df,temp_qtl.df2)
+        }
         
-        if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(refinedQTL$LG[sub_q],round(refinedQTL$cM[sub_q],2),sep="_"),collapse="+")
-
         return(temp_qtl.df)
       }))
     }))
     
-   
     refinedQTL2 <- rbind(refinedQTL2,refinedQTL)
     
     outputQTL <- do.call(rbind,lapply(sort(unique(refinedQTL2$LG)), function(lg){
@@ -238,11 +295,14 @@ check_cofactors <- function(IBD_list,
 #' are only estimated from bivalents in meiosis; any offspring resulting from a predicted multivalent is excluded from the analysis and will be returned with a \code{NA} value.
 #' @param IBD_list List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}).
 #' @param plausible_pairing_prob The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
-#' The default setting of 0.4 is rather low - but accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.
+#' The default setting of 0.3 accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.
 #' In such situations, both pairing configurations (also termed "valencies") would be expected to have a probability close to 0.5. Both are then considered,
-#' and the output contains the probability of both situations. These can then be used to generate a probabilistic recombination landscape. If a more definite 
+#' and the output contains the probability of both situations. These can then be used to generate a probabilistic recombination landscape. In some cases,
+#' it may not be possible to discern the pairing in one of the parents due to a lack of recombination (ie. full parental haplotypes were transmitted). In such cases, 
+#' having a lower threshold here will allow more offspring to be analysed without affecting the quality of the predictions. If a more definite 
 #' set of predictions is required, simply increase \code{plausible_pairing_prob} to eliminate such uncertainty. These individuals will then be 
 #' returned with a \code{NA} value.
+#' In any case, it is always helpful to visualise the output using the function \code{\link{visualiseHaplo}}.
 #' @return A nested list corresponding to each linkage group. Within each LG, a list with 3 items is returned, specifying the \code{plausible_pairing_prob}, the \code{map} and 
 #' the predicted \code{recombinations} in each individual in the mapping population. Per individual, all valencies with a probability greater than
 #' \code{plausible_pairing_prob} are returned, specifying both the \code{Valent_probability} and the best estimate of the cM position of the
@@ -253,7 +313,7 @@ check_cofactors <- function(IBD_list,
 #' recom.ls <- count_recombinations(IBD_4x)
 #' @export
 count_recombinations <- function(IBD_list,
-                                 plausible_pairing_prob = 0.4) {
+                                 plausible_pairing_prob = 0.3) {
   
   IBD_list <- test_IBD_list(IBD_list)
   
@@ -269,29 +329,29 @@ count_recombinations <- function(IBD_list,
   ploidy2 <- IBD_list[[1]]$ploidy2
   
   if(IBDtype == "genotypeIBD"){
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
+    # if(IBD_list[[1]]$method == "hmm_TO"){
+    #   ## We are using the output of TetraOrigin
+    #   GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
+    #   Nstates <- nrow(GenCodes)
+    #   indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    #   for(r in 1:nrow(indicatorMatrix)){
+    #     for(h in 1:ncol(GenCodes)){
+    #       indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
+    #     }
+    #   }
+    #   
+    # } else{
+    ## We are using the output of estimate_IBD
+    GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
+    Nstates <- nrow(GenCodes)
+    indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    for(r in 1:nrow(indicatorMatrix)){
+      for(h in 1:ncol(GenCodes)){
+        indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
       }
-      
-    } else{
-      ## We are using the output of estimate_IBD
-      GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
-      }
-      
     }
+    
+    # }
     
   } else if(IBDtype == "haplotypeIBD"){
     Nstates <- ploidy + ploidy2 #this is not actually needed..
@@ -305,9 +365,11 @@ count_recombinations <- function(IBD_list,
     
     if(!bivalent_decoding){
       # ML <- IBD_list[[ch]]$marginal.likelihood
-      ML <- sapply(unname(IBD_list[[ch]]$marginal.likelihood),function(x) setNames(max(x),rownames(x)[which.max(x)]))
+      # ML <- sapply(unname(IBD_list[[ch]]$marginal.likelihoods),function(x) setNames(max(x),rownames(x)[which.max(x)]))
       
-      f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
+      # f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
+      f1ok <- IBD_list[[ch]]$valency == "BB"
+      
       if(length(which(f1ok)) == 0) stop(paste("Cannot proceed on LG",ch,"- no offspring predicted from bivalent-only meioses!"))
     } else{
       f1ok <- rep(TRUE,nind)
@@ -322,12 +384,12 @@ count_recombinations <- function(IBD_list,
                                        "[",2))
     }
     
-    F1_recombinants <- lapply(1:nind, function(f1 = 1){
-   
+    F1_recombinants <- lapply(1:nind, function(f1 = 9){
+      
       if(f1 %in% which(f1ok)){
         ## Need to weight by the probabilities of the pairing; choose only plausible pairings:
         plausible <- pair.ls[[f1]][pair.ls[[f1]] >= plausible_pairing_prob]
-         
+        
         ## Generate haplotype probabilities
         haploprobs <- IBD_list[[ch]]$IBDarray[,,f1] %*% indicatorMatrix
         colnames(haploprobs) <- LETTERS[1:ncol(haploprobs)]
@@ -350,18 +412,18 @@ count_recombinations <- function(IBD_list,
             
             return(rec.pos)
           }),prob.pair)
+          
+          return(list("Valent_probability" = round(plausible[[pair]],3),
+                      "recombination_breakpoints" = recoms))
+          
+        }),names(plausible))
         
-        return(list("Valent_probability" = round(plausible[[pair]],3),
-                    "recombination_breakpoints" = recoms))
-        
-      }),names(plausible))
-      
         if(length(f1.recoms) == 0) f1.recoms <- NA
         
       } else{
         f1.recoms <- NA
       }
-        
+      
       return(f1.recoms)
     })
     
@@ -388,7 +450,7 @@ count_recombinations <- function(IBD_list,
 #' @export
 convert_mappoly_to_phased.maplist <- function(mappoly_object){
   
-  if(class(mappoly_object) != "list") stop("list input expected!")
+  if(!inherits(mappoly_object, what = "list")) stop("list input expected!")
   
   ploidy <- mappoly_object[[1]]$info$ploidy
   
@@ -436,7 +498,7 @@ convert_mappoly_to_phased.maplist <- function(mappoly_object){
 #' @description Function to estimate the GIC per homologue using IBD probabilities
 #' @param IBD_list List of IBD probabilities
 #' @return A nested list; each list element (per linkage group) contains the following items:
-#' \itemize{
+#' \describe{
 #' \item{GIC : }{Matrix of GIC values estimated from the IBD probabilities}
 #' \item{map : }{Integrated linkage map positions of markers used in IBD calculation}
 #' \item{parental_phase : }{The parental marker phasing, coded in 1 and 0's}
@@ -453,8 +515,8 @@ estimate_GIC <- function(IBD_list){
   ploidy2 <- IBD_list[[1]]$ploidy2
   
   ## Check the list depth:
-  listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
-  if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
+  # listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
+  # if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
   
   IBDarray <- IBD_list[[1]]$IBDarray
   IBDtype <- IBD_list[[1]]$IBDtype
@@ -468,33 +530,33 @@ estimate_GIC <- function(IBD_list){
     if(!bivalent_decoding) warning("Cannot estimate the GIC from multivalent-derived offspring due to possible double reduction.
                                    \nScreening out such individuals and proceeding...")
     
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      
-      GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
+    # if(IBD_list[[1]]$method == "hmm_TO"){
+    #   ## We are using the output of TetraOrigin
+    #   # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
+    #   # mname <- paste0("GenotypeMat",Nstates)
+    #   # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
+    #   
+    #   GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
+    #   Nstates <- nrow(GenCodes)
+    #   indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    #   for(r in 1:nrow(indicatorMatrix)){
+    #     for(h in 1:ncol(GenCodes)){
+    #       indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
+    #     }
+    #   }
+    #   
+    # } else{
+    ## We are using the output of estimate_IBD
+    GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
+    Nstates <- nrow(GenCodes)
+    indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    for(r in 1:nrow(indicatorMatrix)){
+      for(h in 1:ncol(GenCodes)){
+        indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
       }
-      
-    } else{
-      ## We are using the output of estimate_IBD
-      GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
-      }
-      
     }
+    
+    # }
     
     
   } else if(IBDtype == "haplotypeIBD"){
@@ -513,8 +575,9 @@ estimate_GIC <- function(IBD_list){
     if(IBDtype == "genotypeIBD"){
       
       if(!bivalent_decoding){
-        ML <- IBD_list[[l]]$marginal.likelihood
-        f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
+        # ML <- IBD_list[[l]]$marginal.likelihood
+        # f1ok <- names(ML) == "BB" #simplest for now to take only BB offspring rather than messing with half-bits of offspring
+        f1ok <- IBD_list[[l]]$valency == "BB"
         nf1 <- length(which(f1ok))
         if(nf1 == 0) stop(paste("Cannot proceed on LG",l,"- no offspring predicted from bivalent-only meioses!"))
       } else{
@@ -574,7 +637,7 @@ estimate_GIC <- function(IBD_list){
 #' while for the latter \code{probgeno_df} must be supplied. Note that probabilistic genotypes can only be accepted if the \code{method} is default ('hmm').
 #' @param genotypes Marker genotypes, either a 2d matrix of integer marker scores or a data.frame of dosage probabilities. 
 #' Details are as follows:
-#' \itemize{
+#' \describe{
 #' \item{discrete : }{
 #'  If \code{input_type} is 'discrete', \code{genotypes} is a matrix of marker dosage scores with markers in rows and individuals in columns.
 #'  Both (marker) rownames and (individual or sample) colnames are needed.
@@ -582,7 +645,7 @@ estimate_GIC <- function(IBD_list){
 #' \item{probabilistic : }{
 #' If \code{input_type} is 'probabilistic', \code{genotypes} is a data frame as read from the scores file produced by function \code{saveMarkerModels} of R package 
 #' \code{fitPoly}, or alternatively, a data frame containing at least the following columns:
-#' \itemize{
+#' \describe{
 #' \item{SampleName : }{
 #' Name of the sample (individual)
 #' }
@@ -626,22 +689,22 @@ estimate_GIC <- function(IBD_list){
 #' @param factor_dist If \code{method = "heur"}, the factor by which to increase or decrease the recombination frequencies as calculated from the map distances.
 #' @return A list of IBD probabilities, organised by linkage group (as given in the input \code{phased_maplist}). Each
 #' list item is itself a list containing the following:
-#' \itemize{
-#' \item{IBDtype: The type of IBD; for this function only "genotypeIBD" are calculated.}
-#' \item{IBDarray: A 3d array of IBD probabilities, with dimensions marker, genotype-class and F1 individual.}
-#' \item{map: A 3-column data-frame specifying chromosome, marker and position (in cM)}
-#' \item{parental_phase: Phasing of the markers in the parents, as given in the input \code{phased_maplist}}
-#' \item{marginal.likelihoods: A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise \code{NULL}}
-#' \item{valency: The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", \code{NULL}}
-#' \item{offspring: Offspring names}
-#' \item{biv_dec: Logical, whether bivalent decoding was used in the estimation of the F1 IBD probabilities.}
-#' \item{gap: The size of the gap (in cM) used when interpolating the IBD probabilities. See function \code{\link{spline_IBD}} for details.}
-#' \item{genocodes: Ordered list of genotype codes used to represent different genotype classes.}
-#' \item{pairing: log likelihoods of each of the different pairing scenarios considered (can be used e.g. for post-mapping check of preferential pairing)}
-#' \item{ploidy: ploidy of parent 1}
-#' \item{ploidy2: ploidy of parent 2}
-#' \item{method: The method used, either "hmm" (default) or "heur". See argument \code{method}}
-#' \item{error: The error prior used, if method "hmm" was used, otherwise \code{NULL}}
+#' \describe{
+#' \item{IBDtype}{The type of IBD; for this function only "genotypeIBD" are calculated.}
+#' \item{IBDarray}{A 3d array of IBD probabilities, with dimensions marker, genotype-class and F1 individual.}
+#' \item{map}{A 3-column data-frame specifying chromosome, marker and position (in cM)}
+#' \item{parental_phase}{Phasing of the markers in the parents, as given in the input \code{phased_maplist}}
+#' \item{marginal.likelihoods}{A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise \code{NULL}}
+#' \item{valency}{The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", \code{NULL}}
+#' \item{offspring}{Offspring names}
+#' \item{biv_dec}{Logical, whether bivalent decoding was used in the estimation of the F1 IBD probabilities.}
+#' \item{gap}{The size of the gap (in cM) used when interpolating the IBD probabilities. See function \code{\link{spline_IBD}} for details.}
+#' \item{genocodes}{Ordered list of genotype codes used to represent different genotype classes.}
+#' \item{pairing}{log likelihoods of each of the different pairing scenarios considered (can be used e.g. for post-mapping check of preferential pairing)}
+#' \item{ploidy}{ploidy of parent 1}
+#' \item{ploidy2}{ploidy of parent 2}
+#' \item{method}{The method used, either "hmm" (default) or "heur". See argument \code{method}}
+#' \item{error}{The error prior used, if method "hmm" was used, otherwise \code{NULL}}
 #' }
 #' @references
 #' \itemize{
@@ -724,7 +787,7 @@ estimate_IBD <- function(input_type = "discrete",
 #' @param QTLconfig Nested list of homologue configurations and modes of action of QTL to be explored and compared, the output of \code{\link{segMaker}}.
 #' Note that a default List is available of all possible bi-allelic QTL if none is provided.
 #' Each list element is itself a list with components
-#' \itemize{
+#' \describe{
 #'  \item{homs : }{ a vector of length at least 1, describing the proposed homologues the functional allele Q is on}
 #'  \item{mode : }{ Vector of same length as \code{homs} with codes "a" for additive and "d" for dominant.}
 #' }
@@ -734,11 +797,16 @@ estimate_IBD <- function(input_type = "discrete",
 #' using the most likely QTL configuration?
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @return List with the following items:
-#' \itemize{
-#' \item{BIC : }{Vector of BIC values corresponding to elements of \code{QTLconfig} provided for testing}
-#' \item{Allele.effects : }{Summary of the means and standard errors of groups with (+)
+#' \describe{
+#' \item{linkage_group}{Linkage group of the QTL peak being explored}
+#' \item{cM}{CentiMorgan position of the locus being explored}
+#' \item{BIC}{Vector of BIC values corresponding to elements of \code{QTLconfig} provided for testing}
+#' \item{Allele.effects}{Summary of the means and standard errors of groups with (+)
 #' and without(-) the specified allele combinations for the most likely QTLconfig
 #' if \code{testAllele_Effects} = \code{TRUE} (\code{NULL} otherwise).}
+#' \item{genotype.means}{A one-column matrix of mean phenotype values of offspring classes, with rownames
+#' corresponding to the genotype class. If the probability of certain genotype classes is 0 (e.g. double reduction
+#' classes where no double reduction occurred), then the genotype mean for that class will be \code{NA}}
 #' }
 #' @examples
 #' data("IBD_4x","BLUEs.pheno","qtl_LODs.4x")
@@ -783,7 +851,17 @@ exploreQTL <- function(IBD_list,
   ploidyF1 <- (ploidy + ploidy2)/2
   
   if(is.null(QTLconfig)){
-    sname <- paste0("segList_",ploidyF1,"x")
+    
+    if(ploidyF1 == 3){ #need a work-around for triploid populations
+      if(ploidy > ploidy2){
+        sname <- "segList_3x" #this was the original version
+      } else{
+        sname <- "segList_3x_24" #update since version 0.1.0
+      }
+    } else{
+      sname <- paste0("segList_",ploidyF1,"x")
+    }
+    
     QTLconfig <- get(sname)
   }
   
@@ -792,7 +870,8 @@ exploreQTL <- function(IBD_list,
   })
   
   QTLseg <- lapply(seq(length(QTLconfig)),function(n) {
-    unique(match.arg(as.character(QTLconfig[[n]]$homs),1:(2*ploidy),
+    unique(match.arg(arg = as.character(QTLconfig[[n]]$homs),
+                     choices = as.character(1:(ploidy + ploidy2)),
                      several.ok = TRUE))
   })
   
@@ -807,34 +886,34 @@ exploreQTL <- function(IBD_list,
   
   if(IBDtype == "genotypeIBD"){
     
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      # GenotypeCodes <- get(paste0("GenotypeCodes",Nstates))
-      
-      GenotypeCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenotypeCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenotypeCodes)){
-          indicatorMatrix[r,GenotypeCodes[r,h]] <- indicatorMatrix[r,GenotypeCodes[r,h]] + 1
-        }
-      }
-      
-      
-    } else{
-      ## We are using the output of estimate_IBD
-      GenotypeCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
-      Nstates <- nrow(GenotypeCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenotypeCodes)){
-          indicatorMatrix[r,GenotypeCodes[r,h]] <- indicatorMatrix[r,GenotypeCodes[r,h]] + 1
-        }
+    # if(IBD_list[[1]]$method == "hmm_TO"){
+    #   ## We are using the output of TetraOrigin
+    #   # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
+    #   # mname <- paste0("GenotypeMat",Nstates)
+    #   # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
+    #   # GenotypeCodes <- get(paste0("GenotypeCodes",Nstates))
+    #   
+    #   GenotypeCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
+    #   Nstates <- nrow(GenotypeCodes)
+    #   indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    #   for(r in 1:nrow(indicatorMatrix)){
+    #     for(h in 1:ncol(GenotypeCodes)){
+    #       indicatorMatrix[r,GenotypeCodes[r,h]] <- indicatorMatrix[r,GenotypeCodes[r,h]] + 1
+    #     }
+    #   }
+    #   
+    #   
+    # } else{
+    ## We are using the output of estimate_IBD
+    GenotypeCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
+    Nstates <- nrow(GenotypeCodes)
+    indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    for(r in 1:nrow(indicatorMatrix)){
+      for(h in 1:ncol(GenotypeCodes)){
+        indicatorMatrix[r,GenotypeCodes[r,h]] <- indicatorMatrix[r,GenotypeCodes[r,h]] + 1
       }
     }
+    # }
     
   } else if(IBDtype == "haplotypeIBD"){
     Nstates <- ploidy + ploidy2 #this is not actually needed..
@@ -843,8 +922,8 @@ exploreQTL <- function(IBD_list,
     stop("Unable to determine IBD type, please check IBD_list elements have a valid $IBDtype tag.")
   }
   
-  listdepth <- list.depth(IBD_list)#polyqtlR:::list.depth(IBD_list)
-  if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
+  # listdepth <- list.depth(IBD_list)#polyqtlR:::list.depth(IBD_list)
+  # if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
   
   if(dim(IBDarray)[2] %% Nstates != 0) stop("Incompatible input detected..")
   
@@ -854,8 +933,9 @@ exploreQTL <- function(IBD_list,
     cMpositions <- IBD_list[[linkage_group]]$map$position
   }
   
+  LG.data <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == linkage_group,]
+  
   if(is.null(cM)){
-    LG.data <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == linkage_group,]
     cM <- LG.data[which.max(LG.data$LOD),"position"]
     
     if(!is.null(LOD_data$Perm.res)){
@@ -912,6 +992,7 @@ exploreQTL <- function(IBD_list,
     ALL.phenoSums <- peakProbs %*% Phenotypes
     ALL.genoSums <- rowSums(peakProbs)
     ALL.means <- ALL.phenoSums/ALL.genoSums
+    ALL.means[is.nan(ALL.means[,1]),] <- NA #replace NaN with NA (as ALL.means is also in final output)
     nterms <- length(which(!is.na(ALL.means))) #use this instead of Nstates, though shouldn't make a big difference...
     
   } else{
@@ -1072,7 +1153,7 @@ exploreQTL <- function(IBD_list,
       noQTL <- "o"
       yesQTL <- "Q"
       
-      seg.msg <- rep(noQTL, 2*ploidy)
+      seg.msg <- rep(noQTL, ploidy + ploidy2)
       seg.msg[unlist(BICconfig$homs)] <- yesQTL
       seg.msg <- paste(
         paste0(seg.msg[1:ploidy],collapse=""),
@@ -1094,7 +1175,7 @@ exploreQTL <- function(IBD_list,
                                  "Segtype" = seg.msg,
                                  "Action" = mode.msg,
                                  "Allele effects" = temp.out)
-      names(outList)[counter] <- paste0(temp.config,collapse="")
+      names(outList)[counter] <- paste0(paste0(temp.config,collapse = "_"),substr(mode.msg,1,1))
       counter <- counter + 1
     }
     
@@ -1105,8 +1186,11 @@ exploreQTL <- function(IBD_list,
   if (!is.null(log))
     close(log.conn)
   
-  return(list("BIC" = BIC,
-              "Allele.effects" = outList))
+  return(invisible(list(linkage_group = linkage_group,
+                        cM = cM,
+                        BIC = BIC,
+                        Allele.effects = outList,
+                        genotype.means = ALL.means)))
 } #exploreQTL
 
 #' Function to find the position of maximum LOD on a particular linkage group
@@ -1166,14 +1250,18 @@ findSupport <- function(LOD_data,
 } #findSupport
 
 
-#' Import IBD probabilities as estimated by TetraOrigin
-#' @description Imports the summarised IBD probability output of TetraOrigin (which estimates IBD probabilities at all
-#' marker positions), and interpolates these at a grid of positions at user-defined spacing.
-#' @param folder The path to the folder in which the TetraOrigin output is contained, default is \code{NULL} if files are in working directory.
-#' @param filename.vec A vector of the character filename(s) of the \code{.csv} file(s) containing the output of TetraOrigin. Should be in order according to LG/chromosome numbering.
-#' @param bivalent_decoding Logical, if \code{TRUE} then only bivalent pairing was allowed in TetraOrigin,
-#' specify \code{FALSE} if multivalent pairing was also allowed.
-#' @param error The offspring error prior used in the offspring decoding step, here assumed to be 0.01
+#' Import IBD probabilities as estimated by TetraOrigin or PolyOrigin
+#' @description Imports the IBD probability output of TetraOrigin (Mathematica software) or PolyOrigin (julia software) into the same
+#' format as natively-estimated IBD probabilities from the polyqtlR package.  
+#' @param method The method used for IBD estimation, either "TO" for TetraOrigin or "PO" for PolyOrigin
+#' @param folder The path to the folder in which the Tetra/PolyOrigin (ie. TetraOrigin or PolyOrigin) output is contained, 
+#' default is \code{NULL} if files are in working directory.
+#' @param filename If method = "TO", the (vector of) character filename stem(s) of the \code{.csv} file(s) containing the output of TetraOrigin (stem = without ".csv"). 
+#' Should be in order according to LG/chromosome numbering. If method = "PO", then simply specify the PolyOrigin filename stem here (as the output is not split into separate linkage
+#' groups in PolyOrigin). A PolyOrigin file with name <filename>_polyancestry.csv and its corresponding log file <filename>.log will then be searched for.
+#' @param bivalent_decoding Logical, if method = "TO" you must specify \code{TRUE} if only bivalent pairing was allowed in TetraOrigin (in offspring deciding step),
+#'  otherwise specify \code{FALSE} if multivalent pairing was also allowed. If method = "PO", this will be automatically detected, so no need to specify (will be ignored).
+#' @param error If method = "TO", the offspring error prior used in the offspring decoding step of TetraOrigin, by default assumed to be 0.01. For method = "PO", this is automatically read in.
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @return Returns a list with the following items:
 #' \item{IBDtype : }{Always "genotypeIBD" for the output of TetraOrigin}
@@ -1184,16 +1272,27 @@ findSupport <- function(LOD_data,
 #' \item{valency : }{The predicted valency that maximised the marginal likelihood, per offspring. Currently \code{NULL}}
 #' \item{offspring : }{Offspring names}
 #' \item{biv_dec : }{Logical, the bivalent_decoding parameter specified.}
-#' \item{gap : }{The gap size used in IBD interpolation, by default \code{NULL}. See \code{\link{spline_IBD}}}
+#' \item{gap : }{The gap size used in IBD interpolation if performed by \code{\link{spline_IBD}}. At this stage, \code{NULL}}
 #' \item{genocodes : }{Ordered list of genotype codes used to represent different genotype classes.}
-#' \item{pairing : }{log likelihoods of each of the different pairing scenarios considered (can be used e.g. for post-mapping check of preferential pairing)}
+#' \item{pairing : }{log likelihoods of each of the different pairing scenarios considered 
+#' (can be used e.g. for post-mapping check of preferential pairing)}
 #' \item{ploidy : }{The ploidy of parent 1, by default assumed to be 4}
 #' \item{ploidy2 : }{The ploidy of parent 2, by default assumed to be 4}
-#' \item{method : }{The method used, always returned as "hmm_TO" (Hidden Markov Model TetraOrigin)}
-#' \item{error : }{The error prior used in the calculation, assumed to be 0.01}
+#' \item{method : }{The method used, either "hmm_TO" (TetraOrigin) or "hmm_PO" (PolyOrigin)}
+#' \item{error : }{The error prior used in the calculation in TetraOrigin, assumed to be 0.01}
+#' @examples
+#' \dontrun{
+#' ## These examples demonstrate the function call for both methods, but won't run without input files
+#' ## from either package, hence this call will normally result in an Error:
+#' IBD_TO <- import_IBD(method = "TO", filename = paste0("test_LinkageGroup",1:5,"_Summary"),
+#' bivalent_decoding = FALSE, error = 0.05)
+#' ## Equivalent call for PolyOrigin output:
+#' IBD_PO <- import_IBD(method = "PO",filename = "test")
+#' }
 #' @export
-import_IBD <- function(folder=NULL,
-                       filename.vec,
+import_IBD <- function(method,
+                       folder=NULL,
+                       filename,
                        bivalent_decoding = TRUE,
                        error = 0.01,
                        log=NULL){
@@ -1206,126 +1305,398 @@ import_IBD <- function(folder=NULL,
     log.conn <- file(log, "a")
   }
   
-  outlist <- lapply(filename.vec, function(filename){
+  method <- match.arg(method, choices = c("TO","PO"))
+  
+  if(method == "TO"){
+    outlist <- lapply(filename, function(fname){
+      if(!is.null(folder)) {
+        path.to.file <- file.path(folder,paste0(fname,".csv"))
+      } else {
+        path.to.file <- paste0(fname,".csv")
+      }
+      
+      suppressWarnings(input_lines <- readLines(path.to.file))
+      sink(file = log.conn, append=TRUE)
+      placeholders <- grep("inferTetraOrigin-Summary",input_lines)
+      
+      write(paste("Importing map data under description",input_lines[placeholders[1]]),log.conn)
+      mapData <- read.csv(path.to.file, skip = 1,
+                          nrows = (placeholders[2] - placeholders[1] - 2),
+                          stringsAsFactor=FALSE,
+                          header = TRUE)
+      colnames(mapData) <- c("marker","chromosome","position") #make compatible with polyqtlR
+      
+      
+      write(paste("Importing parental phasing under description",input_lines[placeholders[2]]),log.conn)
+      parentalPhase <- read.csv(path.to.file,
+                                skip = placeholders[2],
+                                nrows = (placeholders[3] - placeholders[2] - 2),
+                                stringsAsFactor=FALSE,header = TRUE)
+      rownames(parentalPhase) <- parentalPhase[,1]
+      parentalPhase <- t(parentalPhase[-1,-1])
+      parentalPhase[parentalPhase==1] <- 0
+      parentalPhase[parentalPhase==2] <- 1
+      
+      write(paste("Importing pairing likelihoods under description",input_lines[placeholders[4]]),log.conn)
+      ln_valent <- read.csv(path.to.file,
+                            skip = placeholders[4],
+                            nrows = (placeholders[5] - placeholders[4] - 2),
+                            stringsAsFactor=FALSE,header = TRUE)
+      newcolnames <- sapply(sapply(ln_valent[1,2:ncol(ln_valent)], strsplit,"-"),
+                            function(x) paste0(sapply(x, function(y) paste0(LETTERS[as.numeric(unlist(strsplit(y,"")))], collapse="")),
+                                               collapse="-")
+      )
+      ln_valent <- ln_valent[-1,]
+      
+      ## Transform to a list to conform to correct format:
+      ln_valent.ls <- setNames(lapply(1:nrow(ln_valent), function(r) ln_valent[r,2:ncol(ln_valent)]),ln_valent[,1])
+      
+      ## Express these as relative likelihoods, rather than log likelihoods..
+      ln_valent.ls <- lapply(ln_valent.ls, function(x) {
+        out <- exp(as.numeric(x) - max(as.numeric(x)))
+        ## Re-normalise:
+        out <- out / sum(out)
+        return(setNames(out, newcolnames))
+      })
+      
+      
+      write(paste("Importing genocodes under description",input_lines[placeholders[6]]),log.conn)
+      genocodes <- read.csv(path.to.file,
+                            skip = placeholders[6],
+                            nrows = (placeholders[7] - placeholders[6] - 2),
+                            stringsAsFactor=FALSE,header = TRUE)
+      genocodes <- genocodes$Code
+      ## polyqtlR uses letter format for the genotypes, convert:
+      genocodes <- sapply(genocodes, function(x=genocodes[1]) paste0(letters[as.numeric(strsplit(as.character(x),"")[[1]])],collapse = ""))
+      
+      write(paste("Importing IBD data under description",input_lines[placeholders[7]]),log.conn)
+      
+      if(length(placeholders) != 8){
+        if(length(placeholders) != 7) stop("Insufficient data to proceed. Please check TetraOrigin summary file and/or re-run TetraOrigin.")
+        
+        warning("Not all expected sections encountered in TetraOrigin summary file. Attempting to proceed with current data file...")
+        genotypeProbs <- read.csv(path.to.file,
+                                  skip = placeholders[7],
+                                  stringsAsFactor=FALSE,header = TRUE)
+      } else{
+        genotypeProbs <- read.csv(path.to.file,
+                                  skip = placeholders[7],
+                                  nrows = (placeholders[8] - placeholders[7] - 2),
+                                  stringsAsFactor=FALSE,header = TRUE)
+      }
+      
+      outRowNames <- genotypeProbs[2:nrow(genotypeProbs),1]
+      F1names <- unique(sapply(outRowNames, function(x) strsplit(x,"_genotype")[[1]][1]))
+      genotypeProbs <- as.matrix(genotypeProbs[-1,-1])
+      genotypeProbs <- apply(genotypeProbs,2,as.numeric)
+      
+      Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = 4, pl2 = 4)
+      
+      if(nrow(genotypeProbs) %% Nstates != 0) stop("Incompatible input detected. Make sure bivalent_decoding is correctly specified.")
+      
+      F1size <- nrow(genotypeProbs)/Nstates
+      
+      IBDoutput <- genotypeProbs #No splining here
+      
+      # colnames(IBDoutput) <- paste0("cM",mapData[,3]) #why did I do this? For compatibility with splined IBDs? Removed 16.06.23
+      
+      # rownames(IBDoutput) <- outRowNames
+      
+      if(!is.null(log)) {
+        sink()
+        close(log.conn)
+      }
+      
+      ## Turn the IBDoutput into a 3d array (markers x genotype_class x F1_individual)
+      # IBDarray <- array(t(IBDoutput),dim = c(ncol(IBDoutput),Nstates,F1size),
+      #                   dimnames = list(colnames(IBDoutput),
+      #                                   paste0("g",1:Nstates),
+      #                                   F1names))
+      
+      
+      IBDarray <- array(t(IBDoutput),dim = c(ncol(IBDoutput),Nstates,F1size),
+                        dimnames = list(colnames(IBDoutput),
+                                        genocodes, #updated 16.06.23
+                                        F1names))
+      
+      return(list(IBDtype = "genotypeIBD",
+                  IBDarray = IBDarray,
+                  map = mapData,
+                  parental_phase = parentalPhase,
+                  marginal.likelihoods = NULL,
+                  valency = NULL,
+                  offspring = F1names,
+                  biv_dec = bivalent_decoding,
+                  gap = NULL,
+                  genocodes = genocodes,
+                  pairing = ln_valent.ls,
+                  ploidy = 4,
+                  ploidy2 = 4,
+                  method = "hmm_TO",
+                  error = error))
+    })
+    
+    names(outlist) <- paste0("LG", seq(length(filename)))
+    
+  } else{
+    ## We are dealing with PolyOrigin output
+    
+    ## In this case, filename is a single filename stem, not a vector of filenames (split up per linkage group) 
     if(!is.null(folder)) {
-      path.to.file <- file.path(folder,paste0(filename,".csv"))
+      path.to.file <- file.path(folder,paste0(filename,"_polyancestry.csv"))
+      path.to.file2 <- file.path(folder,paste0(filename,".log"))
     } else {
-      path.to.file <- paste0(filename,".csv")
+      path.to.file <- paste0(filename,"_polyancestry.csv")
+      path.to.file2 <- paste0(filename,".log")
     }
     
     suppressWarnings(input_lines <- readLines(path.to.file))
-    sink(file = log.conn, append=TRUE)
-    placeholders <- grep("inferTetraOrigin-Summary",input_lines)
+    # sink(file = log.conn, append=TRUE)
+    placeholders <- grep("PolyOrigin-PolyAncestry",input_lines)
     
-    write(paste("Importing map data under description",input_lines[placeholders[1]]),log.conn)
-    mapData <- read.csv(path.to.file, skip = 1,
-                        nrows = (placeholders[2] - placeholders[1] - 2),
-                        stringsAsFactor=FALSE,
-                        header = TRUE)
-    
-    # if(!is.null(gap)) gridPositions <- seq(0,max(mapData[,3]),by=gap)
-    
-    write(paste("Importing parental phasing under description",input_lines[placeholders[2]]),log.conn)
+    ## Import the parental phase and map positions (parentgeno)
     parentalPhase <- read.csv(path.to.file,
-                              skip = placeholders[2],
-                              nrows = (placeholders[3] - placeholders[2] - 2),
+                              skip = placeholders[8],
+                              nrows = (placeholders[9] - placeholders[8] - 2),
                               stringsAsFactor=FALSE,header = TRUE)
-    rownames(parentalPhase) <- parentalPhase[,1]
-    parentalPhase <- t(parentalPhase[-1,-1])
-    parentalPhase[parentalPhase==1] <- 0
-    parentalPhase[parentalPhase==2] <- 1
     
-    write(paste("Importing pairing likelihoods under description",input_lines[placeholders[4]]),log.conn)
-    ln_valent <- read.csv(path.to.file,
-                          skip = placeholders[4],
-                          nrows = (placeholders[5] - placeholders[4] - 2),
-                          stringsAsFactor=FALSE,header = TRUE)
-    newcolnames <- sapply(sapply(ln_valent[1,2:ncol(ln_valent)], strsplit,"-"),
-                          function(x) paste0(sapply(x, function(y) paste0(LETTERS[as.numeric(unlist(strsplit(y,"")))], collapse="")),
-                                             collapse="-")
-    )
-    ln_valent <- ln_valent[-1,]
+    p1phase <- parentalPhase$P1
+    p2phase <- parentalPhase$P2
     
-    ## Transform to a list to conform to correct format:
-    ln_valent.ls <- setNames(lapply(1:nrow(ln_valent), function(r) ln_valent[r,2:ncol(ln_valent)]),ln_valent[,1])
+    P1 <- do.call(rbind,strsplit(p1phase,"\\|"))
+    P1 <- sapply(1:ncol(P1), function(x) as.numeric(P1[,x])) - 1 #code in 0 and 1 instead of 1 and 2
+    ploidy <- ncol(P1)
     
-    ## Express these as relative likelihoods, rather than log likelihoods..
-    ln_valent.ls <- lapply(ln_valent.ls, function(x) {
-      out <- exp(as.numeric(x) - max(as.numeric(x)))
-      ## Re-normalise:
-      out <- out / sum(out)
-      return(setNames(out, newcolnames))
+    P2 <- do.call(rbind,strsplit(p2phase,"\\|"))
+    P2 <- sapply(1:ncol(P2), function(x) as.numeric(P2[,x])) - 1
+    ploidy2 <- ncol(P2)
+    
+    mapData <- parentalPhase[,c("chromosome","marker","position")]
+    
+    parphase <- cbind(P1,P2)
+    colnames(parphase) <- paste0("h",1:ncol(parphase))
+    rownames(parphase) <- parentalPhase[,"marker"]
+    
+    ## Extract offspring names
+    offspringinfo <- read.csv(path.to.file,
+                              skip = placeholders[3],
+                              nrows = (placeholders[4] - placeholders[3] - 2),
+                              stringsAsFactor=FALSE,header = TRUE)
+    pop <- offspringinfo$individual
+    
+    ## Import pairing likelihoods (valentprob)
+    valentprob <- read.csv(path.to.file,
+                           skip = placeholders[7],
+                           nrows = (placeholders[8] - placeholders[7] - 2),
+                           stringsAsFactor=FALSE,header = TRUE)
+    
+    if(ploidy == 4){
+      valent.loglike <- lapply(sapply(valentprob[,"loglike"],strsplit,"\\|"),function(x) as.numeric(x))
+      valent.prob <- lapply(sapply(valentprob[,"valentprob"],strsplit,"\\|"),function(x) as.numeric(x))
+      valent.index <- lapply(sapply(valentprob[,"valentindex"],strsplit,"\\|"),function(x) as.numeric(x))
+    } else if(ploidy == 2){
+      valent.loglike <- valentprob[,"loglike"]
+      valent.prob <- valentprob[,"valentprob"]
+      valent.index <- valentprob[,"valentindex"]
+    } else{
+      stop("Function not yet checked on data other than 2x and 4x. Please contact the developer!")
+    }
+    
+    suppressWarnings(logfile_lines <- readLines(path.to.file2))
+    
+    ## To generate $bivalent_decoding field, need to check the log file (note: by default chrpairing == 44)
+    if(ploidy == 4){
+      
+      bd <- grep(pattern = "chrpairing =", logfile_lines)
+      
+      if(length(bd) == 0){
+        warning("Could not match chrpairing in PolyOrigin logfile. Assuming multivalent pairing was allowed in offspring phasing!")
+        bivdec <- FALSE #Assume chrpairing = 44
+      } else{
+        cp <- strsplit(logfile_lines[bd][1],"chrpairing = ")[[1]][2]
+        if(cp == "44"){
+          bivdec <- FALSE
+        } else{
+          bivdec <- TRUE 
+        }
+      }
+      
+    } else if(ploidy == 2){
+      bivdec <- TRUE #by definition a diploid pairs in bivalents, so chrpairing == 44 has no meaning
+    } else{
+      stop("Function not yet checked on data other than 2x and 4x. Please contact the developer!")
+    }
+    
+    
+    ## To generate $error field, also need to check the log file 
+    polyreconstruct <- grep("PolyOrigin, polyReconstruct", logfile_lines)
+    er <- grep(pattern = "epsilon = ", logfile_lines)
+    er.hit <-er[er > max(polyreconstruct)]
+    
+    if(length(er.hit) == 0){
+      warning("Could not match epsilon in PolyOrigin logfile. Assuming epsilon = 0.01")
+      eps <- 0.01
+    } else{
+      eps <- as.numeric(strsplit(logfile_lines[er.hit],"epsilon = ")[[1]][2])
+    }
+    
+    ## Import the coding for the valenctindex:
+    valentlist <- read.csv(path.to.file,
+                           skip = placeholders[6],
+                           nrows = (placeholders[7] - placeholders[6] - 2),
+                           stringsAsFactor=FALSE,header = TRUE)
+    if(ploidy == 4){
+      
+      P1Q <- grep(pattern = paste0(1:ploidy,collapse=":"),x = valentlist$valent)
+      P2Q <- grep(pattern = paste0((ploidy+1):(ploidy+ploidy2),collapse=":"),x = valentlist$valent)
+      
+      QQ <- intersect(P1Q, P2Q)
+      QB <- setdiff(P1Q,QQ)
+      BQ <- setdiff(P2Q,QQ)  
+      BB <- setdiff(1:nrow(valentlist),c(QQ,QB,BQ))
+      
+      vl <- 1:nrow(valentlist)
+      for(r in 1:length(vl)){
+        if(vl[r] %in% BB) names(vl)[r] <- "BB"
+        if(vl[r] %in% QB) names(vl)[r] <- "QB"
+        if(vl[r] %in% BQ) names(vl)[r] <- "BQ"
+        if(vl[r] %in% QQ) names(vl)[r] <- "QQ"
+      }
+      
+      ## This will be the $valency output (workaround to maintain compatibility)
+      maxL.valent <- sapply(1:length(valent.prob), function(n=1){
+        return(names(vl[valent.index[[n]][which.max(valent.prob[[n]])]]))
+      } )
+      
+      
+    } else if(ploidy == 2){
+      # vl <- "BB" #Assumes length of valentlist is 1, which is true for a diploid
+      maxL.valent <- rep("BB",length(valent.prob))
+      
+    } else{
+      ## This Error would already have been given, but just for completeness:
+      stop("Function not yet checked on data other than 2x and 4x. Please contact the developer!")
+    }
+    
+    ## I will not try to replicate the output $marginal likelihoods for now
+    ## as these are just logL of BB, BQ, QB and QQ, while PO gives logL of 16 valencies.
+    ## In time, update estimate_IBD to be compatible (I guess it unlikely that users will continue
+    ## to use TetraOrigin given the availability of PolyOrigin now)
+    
+    ## To generate $pairing, need to transform the output of PO into polyqtlR format.
+    ## Convert the names of valentlist into polyqtlR coding
+    valent.recoding <- sapply(valentlist$valent, function(x = valentlist$valent[16]){
+      psplit <- strsplit(x,"\\|")[[1]]
+      bivs <- grep("-",psplit) #the dash divides bivalents (in 4x, still need to check this works in 2x)
+      bivpairs <- quadpairs <- NULL
+      
+      if(length(bivs) > 0){
+        split2 <- do.call(c,lapply(sapply(psplit[bivs], strsplit,"\\-"),strsplit,"\\:"))
+        bivpairs <- sapply(split2,function(x) paste0(LETTERS[as.numeric(x)], collapse = ""))
+        if(length(bivs) != ploidy/2){ #there are quads
+          quadpairs <- sapply(sapply(psplit[setdiff(1:(ploidy/2),bivs)], strsplit,"\\:"), function(x) paste0(LETTERS[as.numeric(x)], collapse = ""))
+        }
+      } else{
+        quadpairs <- sapply(sapply(psplit, strsplit,"\\:"), function(x) paste0(LETTERS[as.numeric(x)], collapse = ""))
+      }
+      return(paste0(sort(c(bivpairs,quadpairs)),collapse="-"))
     })
     
+    valent.loglike.recoded <- sapply(1:length(valent.loglike), function(n=1){
+      setNames(exp(valent.loglike[[n]])/sum(exp(valent.loglike[[n]])),valent.recoding[valent.index[[n]]])
+    })
     
-    write(paste("Importing genocodes under description",input_lines[placeholders[6]]),log.conn)
-    genocodes <- read.csv(path.to.file,
-                          skip = placeholders[6],
-                          nrows = (placeholders[7] - placeholders[6] - 2),
+    ## In estimate_IBD we took the approach of classifying an offspring as coming from bivalent or 
+    ## multivalent pairing, as proposed in TetraOrigin. The approach of PolyOrigin appears to be
+    ## more flexible in this regard - it returns the likelihoods of all valencies with non-zero probability
+    ## This could cause potentially unwanted behaviour in some polyqtlR functions e.g. estimate_GIC. 
+    
+    ## For now, I will classify the PolyOrigin output as Q if the most likely configuration includes a 
+    ## quadrivalent, and B otherwise. May need to revisit this, or update estimate_IBD to make compatible 
+    ## with the PolyOrigin approach (which is broadly similar)
+    
+    ## Also import the ancestralgenotype:
+    ancestralgenotype <- read.csv(path.to.file,
+                                  skip = placeholders[9],
+                                  nrows = (placeholders[10] - placeholders[9] - 2),
+                                  stringsAsFactor=FALSE,header = TRUE)
+    
+    ancestrycodes <- do.call(rbind,sapply(ancestralgenotype$state, function(x) strsplit(x,"-")))
+    genocodes <- apply(sapply(1:((ploidy+ploidy2)/2), function(cl) letters[as.numeric(ancestrycodes[,cl])]),1,paste0,collapse="")
+    
+    LG.names <- LGs <- unique(parentalPhase$chromosome) 
+    # LGs = c("1","2")
+    # LG.names will be used as the output list names also. Check that they are not purely numeric; if so, paste LG onto them:
+    numeric.test <- suppressWarnings(as.numeric(LG.names))
+    
+    if(any(!is.na(numeric.test))) {
+      warning(paste("Purely numeric LG names detected for:",paste0(LG.names[!is.na(numeric.test)],collapse=", "),"\nPasting LG as suffix for these."))
+      LG.names[!is.na(numeric.test)] <- paste0("LG",LG.names[!is.na(numeric.test)])
+    }
+    
+    
+    ## Finally, extract the IBD array:
+    genoprobs <- read.csv(path.to.file,
+                          skip = placeholders[10],
                           stringsAsFactor=FALSE,header = TRUE)
-    genocodes <- genocodes$Code
     
-    write(paste("Importing IBD data under description",input_lines[placeholders[7]]),log.conn)
-    
-    if(length(placeholders) != 8){
-      if(length(placeholders) != 7) stop("Insufficient data to proceed. Please check TetraOrigin summary file and/or re-run TetraOrigin.")
+    IBD.ls <- setNames(lapply(LGs, function(lg = "LG12"){
       
-      warning("Not all expected sections encountered in TetraOrigin summary file. Attempting to proceed with current data file...")
-      genotypeProbs <- read.csv(path.to.file,
-                                skip = placeholders[7],
-                                stringsAsFactor=FALSE,header = TRUE)
-    } else{
-      genotypeProbs <- read.csv(path.to.file,
-                                skip = placeholders[7],
-                                nrows = (placeholders[8] - placeholders[7] - 2),
-                                stringsAsFactor=FALSE,header = TRUE)
-    }
+      lghits <- which(parentalPhase$chromosome == lg)  #these are the rows for this LG
+      
+      genoProbs <- array(0, dim=c(length(lghits), length(genocodes), length(pop)),
+                         dimnames = list(parentalPhase[lghits,"marker"],
+                                         genocodes,pop))
+      
+      counter <- 1
+      
+      for(r in lghits){
+        index.probs <- sapply(genoprobs[r,pop],strsplit,"=>")
+        ## Need to assign names from 1st elements to second, and handle in a list:
+        named.probs <- lapply(index.probs, function(x=index.probs[[4]]) {
+          y = sapply(x,strsplit,"\\|")
+          return(setNames(as.numeric(y[[2]]), genocodes[as.numeric(y[[1]])]))
+        })
+        
+        for(i in 1:length(named.probs)){
+          genoProbs[counter,names(named.probs[[i]]),pop[i]] <- named.probs[[i]]
+        }
+        counter <- counter + 1
+      }
+      
+      return(genoProbs)
+    }),LG.names) #this could be causing a bug..
     
-    outRowNames <- genotypeProbs[2:nrow(genotypeProbs),1]
-    F1names <- unique(sapply(outRowNames, function(x) strsplit(x,"_genotype")[[1]][1]))
-    genotypeProbs <- as.matrix(genotypeProbs[-1,-1])
-    genotypeProbs <- apply(genotypeProbs,2,as.numeric)
+    Npop <- length(pop)
     
-    Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = 4, pl2 = 4)
-    
-    if(nrow(genotypeProbs) %% Nstates != 0) stop("Incompatible input detected. Make sure bivalent_decoding is correctly specified.")
-    
-    F1size <- nrow(genotypeProbs)/Nstates
-    
-    IBDoutput <- genotypeProbs #No splining here
-    colnames(IBDoutput) <- paste0("cM",mapData[,3])
-    
-    # rownames(IBDoutput) <- outRowNames
-    
-    if(!is.null(log)) {
-      sink()
-      close(log.conn)
-    }
-    
-    ## Turn the IBDoutput into a 3d array (markers x genotype_class x F1_individual)
-    IBDarray <- array(t(IBDoutput),dim = c(ncol(IBDoutput),Nstates,F1size),
-                      dimnames = list(colnames(IBDoutput),
-                                      paste0("g",1:Nstates),
-                                      F1names))
-    
-    return(list(IBDtype = "genotypeIBD",
-                IBDarray = IBDarray,
-                map = mapData,
-                parental_phase = parentalPhase,
-                marginal.likelihoods = NULL,
-                valency = NULL,
-                offspring = F1names,
-                biv_dec = bivalent_decoding,
-                gap = NULL,
-                genocodes = genocodes,
-                pairing = ln_valent.ls,
-                ploidy = 4,
-                ploidy2 = 4,
-                method = "hmm_TO",
-                error = error))
-  })
-  
-  names(outlist) <- paste0("LG", seq(length(filename.vec)))
+    ## Put it all together, per linkage group:
+    counter <- 1
+    outlist <- setNames(lapply(1:length(LGs), function(i){
+      
+      lghits <- which(parentalPhase$chromosome == LGs[i])  #these are the rows for this LG
+      
+      # F1hits <- ((lg-1)*Npop + 1):(Npop*lg) #bug here if lg is non-numeric. Use counter instead
+      F1hits <- ((counter-1)*Npop + 1):(Npop*counter)
+      counter <<- counter + 1 #workaround to increment counter..
+      
+      return(list(IBDtype = "genotypeIBD",
+                  IBDarray = IBD.ls[[i]],
+                  map = mapData[lghits,],
+                  parental_phase = parphase[lghits,],
+                  marginal.likelihoods = NULL,
+                  valency = setNames(maxL.valent[F1hits],pop),
+                  offspring = pop,
+                  biv_dec = bivdec,
+                  gap = NULL,
+                  genocodes = genocodes,
+                  pairing = setNames(valent.loglike.recoded[F1hits],pop),
+                  ploidy = ploidy,
+                  ploidy2 = ploidy2,
+                  method = "hmm_PO",
+                  error = eps))
+      
+    }), LG.names)
+  }
   
   return(outlist)
 } #import_IBD
@@ -1374,40 +1745,40 @@ impute_dosages <- function(IBD_list,
   if(!all(c(parent1,parent2) %in% colnames(dosage_matrix))) stop("Parental columns not found in dosage_matrix. Please check arguments parent1 and parent2!")
   
   if(IBD_list[[1]]$error < min_error_prior) stop(paste0("IBDs were estimated with an error prior of ", 
-  IBD_list[[1]]$error,
-  ", less than the set minimum of ",min_error_prior,
-  " provided. Either re-estimate IBDs using a higher prior, or reduce argument min_error_prior accordingly!"))
+                                                        IBD_list[[1]]$error,
+                                                        ", less than the set minimum of ",min_error_prior,
+                                                        " provided. Either re-estimate IBDs using a higher prior, or reduce argument min_error_prior accordingly!"))
   
   IBDtype <- IBD_list[[1]]$IBDtype
   
   if(IBDtype == "genotypeIBD"){
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      
-      GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
+    # if(IBD_list[[1]]$method == "hmm_TO"){
+    #   ## We are using the output of TetraOrigin
+    #   # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
+    #   # mname <- paste0("GenotypeMat",Nstates)
+    #   # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
+    #   
+    #   GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
+    #   Nstates <- nrow(GenCodes)
+    #   indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    #   for(r in 1:nrow(indicatorMatrix)){
+    #     for(h in 1:ncol(GenCodes)){
+    #       indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
+    #     }
+    #   }
+    #   
+    # } else{
+    ## We are using the output of estimate_IBD
+    GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
+    Nstates <- nrow(GenCodes)
+    indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    for(r in 1:nrow(indicatorMatrix)){
+      for(h in 1:ncol(GenCodes)){
+        indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
       }
-      
-    } else{
-      ## We are using the output of estimate_IBD
-      GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
-      }
-      
     }
+    
+    # }
     
   } else if(IBDtype == "haplotypeIBD"){
     Nstates <- ploidy + ploidy2 #this is not actually needed..
@@ -1453,7 +1824,7 @@ impute_dosages <- function(IBD_list,
     }
   }
   
-  imp <- function(lg){
+  imp <- function(lg=1){
     ibd.tmp <- IBD_list[[lg]]$IBDarray
     parphase.tmp <- IBD_list[[lg]]$parental_phase
     
@@ -1504,12 +1875,12 @@ impute_dosages <- function(IBD_list,
 #' @param errors Vector of offspring error priors to test (each between 0 and 1)
 #' @param \dots Arguments passed to \code{\link{estimate_IBD}}. 
 #' @return A list containing the following components:
-#' \itemize{
-#' \item{maxL_IBD : }{ A nested list as would have been returned by the estimate_IBD function, but composite across error priors to maximise the 
+#' \describe{
+#' \item{maxL_IBD}{A nested list as would have been returned by the estimate_IBD function, but composite across error priors to maximise the 
 #' marginal likelihoods. Note that the $error values per linkage group are now the average error prior across the population per linkage group}
-#' \item{MML : }{ A 3d array of the maximal marginal likelihoods, per error prior. Dimensions are individuals, linkage groups, error priors.}
-#' \item{error_per_ind : }{ A matrix of the most likely genotyping error rates per individual (in rows) for each linkage group (in columns)}
-#' \item{errors : }{ The error priors used (i.e. the input vector is returned for later reference.)}
+#' \item{MML}{A 3d array of the maximal marginal likelihoods, per error prior. Dimensions are individuals, linkage groups, error priors.}
+#' \item{error_per_ind}{A matrix of the most likely genotyping error rates per individual (in rows) for each linkage group (in columns)}
+#' \item{errors}{The error priors used (i.e. the input vector is returned for later reference.)}
 #' }
 #' @examples
 #' \dontrun{
@@ -1536,7 +1907,7 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
   IBD.list <- setNames(lapply(errors, function(er){
     estimate_IBD(error = er,...)
   }),paste0("e_",errors))
-
+  
   # #debug:  
   # IBD.list <- setNames(lapply(errors, function(er){
   #   estimate_IBD(error = er,phased_maplist= phased_maplist.4x,
@@ -1588,7 +1959,7 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
     return(temp)
   }),
   names(IBD.list[[1]]))
-  # dim(mml.arr)
+  
   ## Extract the predicted errors per offspring, per LG:
   error_per_ind <- as.matrix(sapply(1:length(IBD.list[[1]]), function(i) errors[apply(mml.arr[,i,],1,which.max)]))
   colnames(error_per_ind) <- names(IBD.list[[1]])
@@ -1610,22 +1981,21 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
 #' flag extreme deviations from the expected numbers (associated with polysomic inheritance, considered the Null hypothesis),
 #' barplots are coloured according to the level of significance of the X2 test. Plots showing red bars indicate extreme deviations from
 #' a polysomic pattern.
-#' @param plausible_pairing_prob The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
 #' @param precision To how many decimal places should summed probabilities per bivalent pairing be rounded? By default 2. 
 #' @return The function returns a nested list, with one element per linkage group in the same order as the input IBD list.
 #' Per linkage group, a list is returned containing the following components:
-#' \itemize{
-#' \item{P1_multivalents:  The count of multivalents in parent 1 (only relevant if \code{bivalent_decoding = FALSE} during IBD calculation)}
-#' \item{P2_multivalents:  Similarly, the count of multivalents in parent 2}
-#' \item{P1_pairing:  The counts of each bivalent pairing predicted in parent 1, with an extra column Pr(X2) which gives the p-value of 
+#' \describe{
+#' \item{P1_multivalents}{The count of multivalents in parent 1 (only relevant if \code{bivalent_decoding = FALSE} during IBD calculation)}
+#' \item{P2_multivalents}{Similarly, the count of multivalents in parent 2}
+#' \item{P1_pairing}{The counts of each bivalent pairing predicted in parent 1, with an extra column Pr(X2) which gives the p-value of 
 #' the X2 test of the off-diagonal terms in the matrix. In the case of a tetraploid, pairing A with B automatically implies C with D pairing,
 #' so the count table contains a lot of redundancy. The table should be read using both row and column names, so row A and column B corresponds
 #' to the count of individuals with A and B pairing (and hence C and D pairing). In a hexaploid, A-B pairing does not imply a particular pairing
 #' configuration in the remaining homologues. In this case, row A and column B is the count of individuals where A and B were predicted to have paired,
 #' summed over all three bivalent configurations with A and B paired (AB-CD-EF, AB-CE-DF, AB-CF,DE).}
-#' \item{P2_pairing:  Same as P1_pairing, except using parent 2}
-#' \item{ploidy:  The ploidy of parent 1}
-#' \item{ploidy2:  The ploidy of parent 2}
+#' \item{P2_pairing}{Same as P1_pairing, except using parent 2}
+#' \item{ploidy}{The ploidy of parent 1}
+#' \item{ploidy2}{The ploidy of parent 2}
 #' }
 #' @examples 
 #' data("IBD_4x")
@@ -1633,7 +2003,6 @@ maxL_IBD <- function(errors = c(0.01,0.05,0.1,0.2),
 #' @export
 meiosis_report <- function(IBD_list,
                            visualise = FALSE,
-                           plausible_pairing_prob = 0.9,
                            precision = 2){
   
   IBD_list <- test_IBD_list(IBD_list)
@@ -1669,11 +2038,15 @@ meiosis_report <- function(IBD_list,
     
     maxprobs <- sapply(IBD_list[[l]]$pairing,max)
     
-    plausible <- which(maxprobs >= plausible_pairing_prob)
+    # plausible <- which(maxprobs >= plausible_pairing_prob)
     
     pairing.sums <- setNames(rep(0,length(all.pairings)),all.pairings)
     
-    for(y in IBD_list[[l]]$pairing[plausible]){
+    # for(y in IBD_list[[l]]$pairing[plausible]){
+    #   pairing.sums[names(y)] <- pairing.sums[names(y)] + y
+    # }
+    
+    for(y in IBD_list[[l]]$pairing){
       pairing.sums[names(y)] <- pairing.sums[names(y)] + y
     }
     
@@ -1794,605 +2167,381 @@ meiosis_report <- function(IBD_list,
 } #meiosis_report
 
 
-#' Plot the results of genome-wide QTL analysis along a single track
-#' @description QTL plotting function that plots output of \code{\link{QTLscan}} function along a single track, useful for overlaying plots. Only works for scan over multiple chromosomes.
-#' @param LOD_data Output of \code{\link{QTLscan}} function.
-#' @param inter_chm_gap The gap size (in cM) between successive chromosomes - by default a gap of 5 cM is used.
-#' @param overlay Add to an existing plot (should be produced by a comparable call to this function) or not? By default \code{FALSE},
-#' in which case a new plot is drawn. Can be useful for displaying results of multiple analyses together. However, an alternative approach, when significance
-#' thresholds have been calculated for multiple comparable scans, that plots be rescaled so that significance thresholds overlap perfectly. For this, the 
-#' \code{\link{plotLinearQTL_list}} function is advised.
+
+
+#' Plot the results of QTL scan. 
+#' @description Up to package v.0.0.9, there were three plotting functions for the output of \code{QTLscan}, namely \code{plotQTL}, \code{plotLinearQTL} and \code{plotLinearQTL_list}.
+#' Since release 0.1.0, the functionality of all three functions has been combined into a single general plotting function, named \code{plotQTL}.
+#' The plot layout is now specified by a new argument \code{layout}, allowing the user to plot results for single chromosomes separately, or together either adjacently or in a grid layout.
+#' Results from multiple analyses can be overlaid. Previously, it was possible to call the function \code{plotQTL} multiple times and overlay subsequent plots using the argument \code{overlay = TRUE}.
+#' This approach is no longer supported. Instead, if multiple results are to be overlaid, they can be provided as a list of \code{QTLscan} or \code{singleMarkerRegression} outputs. Note however that this
+#' is only possible using the default layout. If significance thresholds are
+#' present, the default behaviour is to rescale LOD values so that multiple plots can be combined with overlapping signficance thresholds. This rescaling behaviour can also be
+#' disabled (by setting \code{rescale = FALSE}). Note that not all arguments may be appropriate for all layouts.
+#' @param LOD_data Output of \code{\link{QTLscan}} function. If you wish to overlay multiple genome-wide \code{QTLscan} outputs, then first compile these into a single list and 
+#' pass this to \code{LOD_data}, for example \code{LOD_data = list(qtl_res1, qtl_res2)}. If this is passed as a named list and \code{add_legend = TRUE}, these names will be used
+#' in the legend as well. 
+#' @param layout There are three possible plot layouts - single chromosome plots ("s"), genome-wide plots arranged adjacently in a linear fashion ("l") which is
+#' also the default, and genome-wide plots arranged in a grid ("g"), i.e. a grid of single chromosome plots. In the latter case, a suitable grid dimension will be determined
+#' based on the number of linkage groups detected in \code{LOD_data}. If you wish to overlay results from multiple multi-chromosome analyses, use the default layout.  
+#' @param inter_chm_gap The gap size (in units of cM) between successive chromosomes when \code{layout = "l"}. By default a gap of 5 cM is used. Normally the user should not need to change this.
 #' @param ylimits Use to specify ylimits of plot region, though by default \code{NULL} in which case a suitable plot region is automatically used.
 #' @param sig.unit Label to use on the y-axis for significance units, by default assumed to be LOD score.
-#' @param plot_type Plots can be either in line drawings ("lines") or scatter plot format ("points").
+#' @param plot_type Plots can be either in line drawings ("lines", default) or scatter plot format ("points").
+#' @param colour Vector of colours to be used in the plotting. A default set of 4 colours is provided, the first of which is used when results from a single QTL scan are to be plotted.
 #' @param add_xaxis Should an x-axis be drawn? If multiple QTL analyses are performed on different traits, specifying this to be \code{FALSE}
 #' and using \code{par(mar=c(0,4.1,4.1,2.1))} allows subsequent plots to be neatly stacked.
 #' @param add_rug Logical, by default \code{TRUE} - should original marker points be added to plot?
 #' @param add_thresh Logical, by default \code{TRUE} - should a significance threshold be added to plot?
-#' @param override_thresh By default \code{NULL}. Can be used to specify a value for the significance threshold, overriding any stored in \code{LOD_data}.
-#' @param thresh.lty Gives user control over the line type of the significance threshold to be drawn.
-#' @param thresh.lwd Gives user control over the line width of the significance threshold to be drawn.
-#' @param thresh.col Gives user control over the line colour of the significance threshold to be drawn.
-#' @param return_plotData Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned,
-#' which can be useful for subsequent plot manipulations and overlays.
-#' @param show_thresh_CI Logical, by default \code{TRUE}. Should confidence interval bounds around LOD threshold be shown?
-#' @param use_LG_names Logical, by default \code{TRUE}. Should original character LG names be used as axis labels, or should numbering be used instead?
-#' @param axis_label.cex Argument to adjust the size of the axis labels, can be useful if there are many linkage groups to plot
-#' @param custom_LG_names Specify a vector that contains custom linkage group names. By default \code{NULL}
-#' @param LGdiv.col Colour of dividing lines between linkage groups, by default grey.
-#' @param \dots Arguments passed to \code{\link{plot}}, and \code{\link{lines}} or \code{\link{points}} as appropriate (see argument \code{plot_type}).
-#' @return The plot data, if return_plotData = TRUE. Otherwise \code{NULL}
-#' @examples
-#' \dontrun{
-#' data("qtl_LODs.4x")
-#' plotLinearQTL(LOD_data = qtl_LODs.4x)
-#' }
-#' @export
-plotLinearQTL <- function(LOD_data,
-                          inter_chm_gap = 5, #cM jump between chromosomes..
-                          overlay = FALSE,
-                          ylimits = NULL,
-                          sig.unit = "LOD",
-                          plot_type = c("lines","points"),
-                          add_xaxis = TRUE,
-                          add_rug = TRUE,
-                          add_thresh = TRUE,
-                          override_thresh = NULL,
-                          thresh.lty = 3,
-                          thresh.lwd = 2,
-                          thresh.col = "darkred",
-                          return_plotData = FALSE,
-                          show_thresh_CI = TRUE,
-                          use_LG_names = TRUE,
-                          axis_label.cex = 1,
-                          custom_LG_names = NULL,
-                          LGdiv.col = "gray42",
-                          ...){
-  
-  plot_type <- match.arg(plot_type)
-  
-  ## Check whether there is a LOD threshold:
-  LOD_threshold <- 0
-  
-  if(add_thresh){
-    if(!is.null(override_thresh)){
-      LOD_threshold <- as.numeric(override_thresh)
-    } else if(!is.null(LOD_data$Perm.res)){
-      LOD_threshold <- LOD_data$Perm.res$threshold
-    }
-  }
-  
-  ## Find out the x and y ranges:
-  plotdata <- as.data.frame(LOD_data$QTL.res)
-  
-  if(!"chromosome" %in% colnames(plotdata)) stop("No positional information available for LOD scores! Unable to plot...")
-  
-  ## Check whether there is chromosome 0 data, if so plot separately.
-  if(0 %in% plotdata$chromosome){
-    warning("Unassigned marker positions detected (chr. 0)")
-    ## If overlaying, cannot plot separately
-    if(!overlay){
-      subdata <- plotdata[plotdata$chromosome == 0,]
-      
-      with(subdata,
-           plot(position,LOD,main = "Unassigned markers (Chr. 0)",
-                xlab = "Index", ...)
-      )
-    } else{
-      warning("Cannot plot chr. 0 data separately during overlay plot. Suggest to plot independently using plot() function.")
-    }
-    LOD_data$Map <- LOD_data$Map[-which(LOD_data$Map[,"chromosome"] == 0),]
-    plotdata <- plotdata[-which(plotdata$chromosome == 0),]
-  }
-  
-  n.chms <- length(unique(plotdata$chromosome))
-  chm.lens <- sapply(unique(plotdata$chromosome), function(ch) max(plotdata[plotdata$chromosome == ch,"position"]))
-  
-  if(n.chms == 1) stop("This function is not appropriate for a single chromosome dataset. Use plotQTL instead.")
-  
-  additions <- sapply(1:(n.chms - 1), function(n) sum(chm.lens[1:n]))
-  add.reps <- c(rep(0,length(which(plotdata$chromosome == 1))),
-                unlist(sapply(2:n.chms, function(n) rep(additions[n-1], length(which(plotdata$chromosome == unique(plotdata$chromosome)[n]))))))
-  
-  add.reps <- add.reps + (plotdata$chromosome - 1)*inter_chm_gap #add inter_chm_gaps..
-  chm.ends <- additions + seq(0,inter_chm_gap*(n.chms-2),inter_chm_gap)
-  chm.ends <- c(0,chm.ends, max(chm.ends) + chm.lens[length(chm.lens)])
-  
-  plotdata <- cbind(plotdata, plotdata$position + add.reps)
-  colnames(plotdata)[ncol(plotdata)] <- "xposns"
-  
-  if(!overlay){
-    if(is.null(ylimits)) ylimits <- c(0,extendrange(plotdata$LOD)[2])
-    
-    plot(NULL, xlim=range(plotdata$xposns),ylim = ylimits,
-         axes=FALSE,xlab = ifelse(add_xaxis,"Linkage group",""), ylab = sig.unit, ...)
-    
-    if(add_xaxis) {
-      if(use_LG_names){
-        axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),
-             labels = LOD_data$LG_names, cex.axis = axis_label.cex)
-      } else if(!is.null(custom_LG_names)){
-        axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),
-             labels = custom_LG_names, cex.axis = axis_label.cex)
-      } else{
-        axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),
-             labels = unique(plotdata$chromosome), cex.axis = axis_label.cex)
-      }
-    }
-    
-    if(add_rug) {
-      LOD_data$Map <- as.data.frame(LOD_data$Map)
-      add.reps1 <- c(rep(0,length(which(LOD_data$Map$chromosome == 1))),
-                     unlist(sapply(2:n.chms, function(n) rep(additions[n-1], length(which(LOD_data$Map$chromosome == n))))))
-      add.reps1 <- add.reps1 + (LOD_data$Map$chromosome - 1)*inter_chm_gap #add inter_chm_gaps..
-      rug(LOD_data$Map$position + add.reps1)
-    }
-    
-    axis(2, las = 1)
-    for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = LGdiv.col,lty = 3)
-    box()
-  }
-  ## Add lines
-  for(ch in unique(plotdata$chromosome)) {
-    
-    if(plot_type == "lines"){
-      lines(plotdata[plotdata$chromosome == ch,"xposns"],
-            plotdata[plotdata$chromosome == ch,"LOD"],...)
-    } else{
-      points(plotdata[plotdata$chromosome == ch,"xposns"],
-             plotdata[plotdata$chromosome == ch,"LOD"],...)
-    }
-  }
-  
-  if(LOD_threshold > 0) {
-    segments(par("usr")[1],LOD_threshold,
-             par("usr")[2],LOD_threshold,
-             lty=thresh.lty,lwd=thresh.lwd,col=thresh.col)
-    
-    if(show_thresh_CI & !is.null(LOD_data$Perm.res)){
-      thresh.rgb <- col2rgb(thresh.col)[,1]/255
-      
-      segments(par("usr")[1],LOD_data$Perm.res$threshold.bounds[1],
-               par("usr")[2],LOD_data$Perm.res$threshold.bounds[1],
-               lty=thresh.lty,lwd=thresh.lwd,col=rgb(red = thresh.rgb[1],
-                                                     green = thresh.rgb[2],
-                                                     blue = thresh.rgb[3],
-                                                     alpha = 0.5))
-      
-      segments(par("usr")[1],LOD_data$Perm.res$threshold.bounds[2],
-               par("usr")[2],LOD_data$Perm.res$threshold.bounds[2],
-               lty=thresh.lty,lwd=thresh.lwd,col=rgb(red = thresh.rgb[1],
-                                                     green = thresh.rgb[2],
-                                                     blue = thresh.rgb[3],
-                                                     alpha = 0.5))
-    }
-    
-  }
-  
-  if(return_plotData) {
-    return(plotdata)
-  } else{
-    return(NULL)
-  }
-  
-} #plotLinearQTL
-
-#' Overlay the results of a number of genome-wide QTL analysis for which significance thresholds are available.
-#' @description Extension of the \code{\link{plotLinearQTL}} function, taking as input a list generated from combining the output of \code{\link{QTLscan}}.
-#' Its distinguishing characteristic is that overlaid plots are re-scaled so that the significance thresholds overlap. This can be useful if there are multiple results
-#' being plotted together for comparison, all of which may have different thresholds. The resulting plot can help quickly compare the power of different analyses. Warning - 
-#' the y axis LOD scale is only correct for the first list element / set of results. Also as before, this function only works for QTL scan over multiple chromosomes.
-#' @param LOD_data.ls A list, each element of which is a separate output of \code{\link{QTLscan}}, for which the setting \code{perm_test = TRUE} was used each time.
-#' @param inter_chm_gap The gap size (in cM) between successive chromosomes - by default a gap of 5 cM is used.
-#' @param ylimits Use to specify ylimits of plot region, though by default \code{NULL} in which case a suitable plot region is automatically used.
-#' @param sig.unit Label to use on the y-axis for significance units, by default assumed to be "LOD".
-#' @param plot_type Plots can be either in line drawings or scatter plot format. If multiple types are required, supply as a vector of same length as LOD_data.ls
-#' @param add_xaxis Should an x-axis be drawn? If multiple QTL analyses are performed on different traits, specifying this to be \code{FALSE}
-#' and using \code{par(mar=c(0,4.1,4.1,2.1))} allows subsequent plots to be neatly stacked.
-#' @param add_rug Logical, by default \code{TRUE} - should original marker points be added to plot?
-#' @param colours Vector of colours to be used in the plotting. A default set of 4 colours is provided.
+#' @param override_thresh By default \code{NULL}. Can be used to specify a (numeric) value for the significance threshold, overriding any stored in \code{LOD_data}. If you wish to override
+#' thresholds for multiple analyses (so, when \code{LOD_data} is a list of QTL outputs), can also provide a vector of numeric values here.
+#' @param thresh.lty Gives user control over the line type of the significance threshold to be drawn. Default threshold lty is 3.
+#' @param thresh.lwd Gives user control over the line width of the significance threshold to be drawn. Default threshold lwd is 2.
+#' @param thresh.col Gives user control over the line colour of the significance threshold to be drawn. Default threshold colour is dark red. If plotting multiple analyses with \code{rescale = FALSE},
+#' it can be useful to provide the same colours to this argument as to \code{colour}, so that LOD profiles can be linked to their respective LOD thresholds.
+#' @param return_plotData Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned when \code{layout = "l"},
+#' which can be useful for subsequent plot manipulations and overlays. For other layouts, no plot data is returned.
+#' @param show_thresh_CI Logical, by default \code{FALSE}. Should confidence interval bounds around LOD threshold be shown if available? If \code{LOD_data} is a list from multiple analyses,
+#' this option is ignored to prevent plot becoming too cluttered.
+#' @param use_LG_names Logical, by default \code{TRUE}. Should original character LG names (the names of list \code{LOD_data}) be used as axis labels? If \code{FALSE}, numbering is used instead.
+#' @param axis_label.cex Argument to adjust the size of the axis labels. Can be useful if there are many linkage groups to plot
+#' @param custom_LG_names Option to specify a vector that contains custom linkage group names. By default \code{NULL}. See previous argument \code{use_LG_names}, which is the usual manner
+#' for controlling x-axis labels.
+#' @param LGdiv.col Colour of dividing lines between linkage groups when \code{layout = "l"}, by default grey.
 #' @param ylab.at Distance from the y-axis to place label (by default at 2.5 points)
-#' @param main.size Size of line (or point) to plot the "main" data, the first set of results in the LOD_data.ls input list, by default 2.
-#' @param main.lty Line type for the "main" data, by default a normal line (lty = 1).
-#' @param thresh.lty Gives user control over the line type of the significance threshold to be drawn.
-#' @param thresh.lwd Gives user control over the line width of the significance threshold to be drawn.
-#' @param thresh.col Gives user control over the line colour of the significance threshold to be drawn, by default "darkred"
-#' @param return_plotData Logical, by default \code{FALSE}. If \code{TRUE}, then the x and y coordinates of the plot data are returned,
-#' which can be useful for subsequent plot manipulations and overlays.
-#' @param highlight_positions Option to include a list of associated positions to highlight, of the same length and in the same order as \code{LOD_data.ls}.
-#' Each set of positions should be provided in data.frame format with 3 columns corresponding to linkage group, type and ID (same format as the cofactor.df 
-#' argument of function \code{\link{QTLscan}}. This can be useful if genetic co-factor analyses are being compared. 
-#' If no position is to be highlighted, add the corresponding list element as \code{NULL}.
-#' @param LGdiv.col Colour of dividing lines between linkage groups, by default grey.
-#' @param use_LG_names Logical, by default \code{TRUE}. Should original character LG names be used as axis labels, or should numbering be used instead?
-#' @param \dots Arguments passed to \code{\link{lines}} or \code{\link{points}} as appropriate (see argument plot_type).
-#' @return The plot data, if \code{return_plotData = TRUE}, otherwise \code{NULL}
+#' @param highlight_positions Option to include a (list of) positions to highlight (e.g. peak QTL positions). Each list element should be a 2-column data.frame with columns giving
+#' the linkage group numbers (numeric) and the corresponding cM positions (numeric) to highlight. If \code{LOD_data} is the result of a single genome-wide scan, it is also possible to just directly provide the
+#' 2-column data.frame (again, with column 1 containing linkage group numbers and column 2 containing corresponding cM positions).
+#' If \code{LOD_data} has been provided as a list of multiple analyses, you may wish to highlight different positions from each analysis. Then \code{highlight_positions} should also be a list 
+#' of the same length and in the same order as \code{LOD_data}. Each data.frame of positions will be coloured in the same colour as the LOD output.
+#' If no position is to be highlighted for some analyses, add the corresponding list element as \code{NULL}. For example, if you wish to highlight positions for analyses 1 and 3 in a 3-analysis overlay, 
+#' then use something like \code{highlight_positions = list(data.frame(lg = 1, cM = 50),NULL,data.frame(lg=c(2,3),cM=c(11,99)))}.
+#' The default setting is \code{NULL}, meaning no positions are highlighted.
+#' @param mainTitle Option to supply vector of plot titles if \code{layout = "s"} or \code{layout = "g"}. Argument ignored if using the default layout. Single character vector also allowed and will be recycled.
+#' For no plot titles, leave as default, i.e. \code{FALSE}
+#' @param rescale If results from multiple analyses are to be overlaid and different significance thresholds are detected, then by default plots will be rescaled so that threshold lines overlap.
+#' This behaviour can be disabled by setting \code{rescale = FALSE}. 
+#' @param \dots Arguments passed to \code{\link{plot}}, and \code{\link{lines}} or \code{\link{points}} as appropriate (see argument \code{plot_type}).
+#' @aliases plotLinearQTL plotLinearQTL_list
+#' @return The plot data, if return_plotData = TRUE. Otherwise \code{NULL}. Output is returned invisibly
 #' @examples
 #' \dontrun{
 #' data("qtl_LODs.4x")
-#' ## Introduce some arbitrary noise for the sake of this example:
-#' qtl_LODs.4x_2 <- qtl_LODs.4x
-#' qtl_LODs.4x_2$Perm.res$threshold <- 2.5
-#' qtl_LODs.4x_2$QTL.res$LOD<-qtl_LODs.4x_2$QTL.res$LOD+rnorm(length(qtl_LODs.4x_2$QTL.res$LOD),2)
-#' plotLinearQTL_list(list(qtl_LODs.4x,qtl_LODs.4x_2),plot_type="lines")
+#' plotQTL(LOD_data = qtl_LODs.4x,layout = "l")
 #' }
 #' @export
-plotLinearQTL_list <- function(LOD_data.ls,
-                               inter_chm_gap = 5,
-                               ylimits = NULL,
-                               sig.unit = "LOD",
-                               plot_type,
-                               add_xaxis = TRUE,
-                               add_rug = TRUE,
-                               colours = c("black","red","dodgerblue","sienna4"),
-                               ylab.at = 2.5, 
-                               main.size = 2,
-                               main.lty = 1,
-                               thresh.lty = 3,
-                               thresh.lwd = 2,
-                               thresh.col = "darkred",
-                               return_plotData = FALSE,
-                               highlight_positions = NULL,
-                               LGdiv.col = "gray42",
-                               use_LG_names = TRUE,
-                               ...){
-  ## Check input:
-  if(length(plot_type) == 1){
-    plot_type <- sapply(seq(length(LOD_data.ls)),function(n) match.arg(plot_type, choices = c("lines","points")))
-  } else if(length(plot_type) != length(LOD_data.ls)) {
-    stop(paste("If multiple plot_type required, please supply as a vector of length",length(LOD_data.ls)))
-  } else{
-    plot_type <- sapply(plot_type,match.arg,choices = c("lines","points"))
-  }
-  
-  if(!is.null(highlight_positions)){
-    if(!is.list(highlight_positions) | length(highlight_positions) != length(LOD_data.ls)) 
-    stop("highlight_positions must be a list of the same length as LOD_data.ls")
-    hp <- TRUE
-  } else{
-    hp <- FALSE
-  }
+plotQTL <- function(LOD_data,
+                    layout = "l",
+                    inter_chm_gap = 5, 
+                    ylimits = NULL,
+                    sig.unit = "LOD",
+                    plot_type = "lines",
+                    colour = c("black","red","dodgerblue","sienna4"),
+                    add_xaxis = TRUE,
+                    add_rug = TRUE,
+                    add_thresh = TRUE,
+                    override_thresh = NULL,
+                    thresh.lty = 3,
+                    thresh.lwd = 2,
+                    thresh.col = "darkred",
+                    return_plotData = FALSE,
+                    show_thresh_CI = FALSE,
+                    use_LG_names = TRUE,
+                    axis_label.cex = 1,
+                    custom_LG_names = NULL,
+                    LGdiv.col = "gray42",
+                    ylab.at = 2.5,
+                    highlight_positions = NULL,
+                    mainTitle = FALSE,
+                    rescale = TRUE,
+                    ...){
+  layout <- match.arg(layout, choices = c("s","l","g"))
   
   oldpar <- par(no.readonly = TRUE)    
   on.exit(par(oldpar))            # Thanks to Gregor, CRAN
   
-  if(list.depth(LOD_data.ls) != 3) stop("LOD_data.ls input should be a nested list of outputs of the function QTLscan!")
-  if(any(sapply(sapply(LOD_data.ls, function(x) x$Perm.res),is.null))) stop("All elements of LOD_data.ls should have a significance threshold. Otherwise, use the plotLinearQTL function with setting overlay = TRUE")
+  overlay <- FALSE #whether user wants to add extra plots, by default FALSE
+  multiplot <- NULL #just in case
+  linear_list <- TRUE #for plotting multiple analyses with layout "l" and sig thresh available for all
   
-  ## Remove any chromosome 0 data (possible with single marker regression data)
-  LOD_data.ls <-  lapply(seq(length(LOD_data.ls)), function(l) {
-    temp <- LOD_data.ls[[l]]
-    temp$QTL.res <- temp$QTL.res[temp$QTL.res$chromosome != 0,]
-    temp$Map <- temp$Map[temp$Map[,"chromosome"] != 0,]
-    return(temp)
-  })
-  
-  LOD_data1 <- LOD_data.ls[[1]] #Use the first list element for most of the default data (cM etc..)
-  plotdata1 <- as.data.frame(LOD_data1$QTL.res)
-  
-  n.chms <- length(unique(plotdata1$chromosome))
-  chm.lens <- sapply(unique(plotdata1$chromosome), function(ch) max(plotdata1[plotdata1$chromosome == ch,"position"]))
-  
-  if(n.chms == 1) stop("This function is not appropriate for a single chromosome dataset. Use function plotQTL instead.")
-  
-  additions <- sapply(1:(n.chms - 1), function(n) sum(chm.lens[1:n]))
-  
-  add.reps <- lapply(seq(length(LOD_data.ls)), function(ds) c(rep(0,length(which(LOD_data.ls[[ds]]$QTL.res$chromosome == 1))),
-                                                              unlist(sapply(2:n.chms, function(n) rep(additions[n-1], 
-                                                                                                      length(which(LOD_data.ls[[ds]]$QTL.res$chromosome == n))))))
-                     + (LOD_data.ls[[ds]]$QTL.res$chromosome - 1)*inter_chm_gap
-  )
-  
-  chm.ends <- additions + seq(0,inter_chm_gap*(n.chms-2),inter_chm_gap)
-  chm.ends <- c(0,chm.ends, max(chm.ends) + chm.lens[length(chm.lens)])
-  
-  # Generate a list of the plot data with new column xposns for linear plotting over all LGs on x axis
-  plotdata.ls <- lapply(seq(length(LOD_data.ls)), function(i){
-    out <- cbind(as.data.frame(LOD_data.ls[[i]]$QTL.res), "xposns" = LOD_data.ls[[i]]$QTL.res$position + add.reps[[i]])
-    out$LOD[out$LOD<0] <- 0
-    return(out)
-  })
-  
-  new.adds <- unique(add.reps[[1]])
+  if(list.depth(LOD_data) == 3) {
+    nran <- length(LOD_data) #number of analyses
+    overlay <- TRUE
+    
+    ## Check whether input data all has the same number of linkage groups (and extract intersect if not)
+    nLG <- sapply(LOD_data, function(x) length(unique(x$QTL.res$chromosome)))
 
-  if(hp) hp.ls <- lapply(seq(length(highlight_positions)), function(i){
-    if(!is.null(highlight_positions[[i]])){
+    if(length(unique(nLG)) != 1) {
       
-      x <- highlight_positions[[i]]
+      warning("Variable numbers of LGs detected in LOD_data! Attempting to resolve...")
+      LG_ls <- lapply(LOD_data, function(x) unique(x$QTL.res$chromosome))
+      core_LG <- Reduce(intersect, LG_ls) #gets the intersection of all list elements
       
-      ## Unworked update here... needs some tweaking..
-      # if(length(unique(x[,2])) != 1) stop("Currently, mixing markers and cM positions to highlight is not catered for")
+      for(i in 1:length(LOD_data)){
+        LOD_data[[i]]$QTL.res <- LOD_data[[i]]$QTL.res[LOD_data[[i]]$QTL.res$chromosome %in% core_LG,]
+      }
       
-      # if(x[,2] == "position"){
-      #   out <- plotdata.ls[[i]][plotdata.ls[[i]]$chromosome == x[,1] & 
-      #                             plotdata.ls[[i]]$position == x[,3],]
-      # } else{
-      #   #this bit might cause an issue
-      #   hit <- which(LOD_data.ls[[1]]$Map$marker == x[,3])
-      #   if(length(hit) == 0) {
-      #     warning(paste("Marker",x[,3],"was not found on Map!"))
-      #     out <- NULL
-      #   } else {
-      #     pos <- LOD_data.ls[[1]]$Map[hit,"position"]
-      #     out <- plotdata.ls[[i]][which.min(abs(plotdata.ls[[i]]$position - pos)),]
-      #     }
-      # }
-
-      out <- cbind(x,x[,3] + new.adds[x[,1]])
-      colnames(out)[4] <- "xposn"
-    } else{
-      out <- NULL
+      #Re-calculate:
+      nLG <- sapply(LOD_data, function(x) length(unique(x$QTL.res$chromosome)))
+      }
+    nLG <- unique(nLG)
+    
+    ## Disable the linear list approach which rescales:
+    if(!rescale) {
+      linear_list <- FALSE
+      
+      #Vectorise thresh.col
+      if(length(thresh.col) == 1){
+        message("Multiple analyses being overlaid with only a single thresh.col. Suggest to re-plot with different threshold colours!")
+        thresh.col <- rep(thresh.col,nran)
+      } else if(length(thresh.col) != length(LOD_data)) {
+        stop(paste("If plotting multiple threshold colours, please supply as a vector of length",length(LOD_data)))
+      }
+      
     }
-    return(out)
-  })
-  
-  if(!is.null(ylimits)){
-    ylimits.ls <- lapply(seq(length(LOD_data.ls)), function(i){
-      ylimits #just repeat ylimits
-    })
+    ## If there are any thresholds missing it is not possible to rescale, so also disable linear list approach:
+    if(any(sapply(sapply(LOD_data, function(x) x$Perm.res),is.null)) & is.null(override_thresh)) linear_list <- FALSE
+    
+    ## Vectorise some arguments as they may be indexed by [i] later on
+    if(length(plot_type) == 1){
+      plot_type <- sapply(1:nran,function(n) match.arg(plot_type, choices = c("lines","points")))
+    } else if(length(plot_type) != length(LOD_data)) {
+      stop(paste("If multiple plot_type required, please supply as a vector of length",length(LOD_data)))
+    } else{
+      plot_type <- sapply(plot_type,match.arg,choices = c("lines","points"))
+    }
+    
+    if(length(colour) == 1){
+      colour <- rep(colour,nran)
+    } else if(length(colour) < length(LOD_data)) {
+      stop(paste("By default only 4 plotting colours are provided. In your case, please supply 'colour' as a vector of length",length(LOD_data)))
+    } else{
+      colour <- colour[1:length(LOD_data)]
+    }
+    
   } else{
-    ylimits.ls <- lapply(seq(length(LOD_data.ls)), function(i){
-      extendrange(c(0,plotdata.ls[[i]]$LOD,LOD_data.ls[[i]]$Perm.res$threshold))
-    })#add threshold in case not significant, so thresh line always present
+    ## Results of a single QTLscan to be plotted
+    nLG <- length(unique(LOD_data$QTL.res$chromosome)) #there may be chr0 data
+    # nLG <- length(LOD_data$LG_names)
   }
   
-  threshpos <- sapply(seq(length(LOD_data.ls)), function(i){
-    (LOD_data.ls[[i]]$Perm.res$threshold - ylimits.ls[[i]][1])/(ylimits.ls[[i]][2]-ylimits.ls[[i]][1])
-  })
-  
-  p <- min(threshpos) 
- 
-  ## Change the ones with least space above. First find the plot with most space above:
-  min.base <- ylimits.ls[[which.min(threshpos)]][1]
-  orig.wmt <- which.min(threshpos)
-  
-  ## Rescale plot y limits:
-  
-  for(i in setdiff(seq(length(LOD_data.ls)),which.min(threshpos))){
-    ylimits.ls[[i]][2] <- (LOD_data.ls[[i]]$Perm.res$threshold - (1-p)*min.base)/p
-    ylimits.ls[[i]][1] <- min.base
-  }
-  
-  ## Double check the scaling is now correct:
-  threshpos <- sapply(seq(length(LOD_data.ls)), function(i){
-    (LOD_data.ls[[i]]$Perm.res$threshold - ylimits.ls[[i]][1])/(ylimits.ls[[i]][2]-ylimits.ls[[i]][1])
-  })
-
-  if(mean(threshpos) - threshpos[1] > 0.001) {
-    message("Rescaled plot limits issue!"); print(ylimits.ls)
-    stop("Error in rescaling plots, suggest to check data...")
-  }
-  
-  shrink.range <- function(r){
-    return(c(
-      (r[1] + (0.04*r[2] + (r[1]*0.04^2)/(1.04))/(1.04 - 0.04^2))/(1.04),
-      (r[2] + (0.04*r[1])/(1.04))/(1.04 - 0.04^2)
-    ))
-  }
-  
-  plot(NULL, xlim=range(plotdata.ls[[1]]$xposns),ylim = shrink.range(ylimits.ls[[1]]), #ylim gets expanded by plot function
-       axes=FALSE,xlab = ifelse(add_xaxis,"Linkage group",""), ylab = "", cex.lab = 1.5) #Add axes labels afterwards
- 
-  if(add_xaxis) {
-    if(use_LG_names) {
-      xlabs <- LOD_data1$LG_names
+  if(layout == "g"){
+    
+    ## Have to define the grid layout
+    base <- floor(sqrt(nLG)) #this is the ncols to remain a roughly square grid
+    if(nLG - base^2 > 0){
+      nr <- base + 1
+      nc <- base
+      # excess <- (base)*(base + 1) - nLG
     } else{
-      xlabs <-unique(plotdata1$chromosome)
+      nr <- nc <- base
+      # excess <- 0
     }
-    axis(1,at = rowMeans(cbind(chm.ends[-1],chm.ends[-length(chm.ends)])),
-                     labels = xlabs)
+    multiplot <- c(nr,nc)
   }
   
-  if(add_rug) {
-    LOD_data1$Map <- as.data.frame(LOD_data1$Map)
-    add.reps1 <- c(rep(0,length(which(LOD_data1$Map$chromosome == 1))),
-                   unlist(sapply(2:n.chms, function(n) rep(additions[n-1], length(which(LOD_data1$Map$chromosome == n))))))
-    add.reps1 <- add.reps1 + (LOD_data1$Map$chromosome - 1)*inter_chm_gap #add inter_chm_gaps..
-    rug(LOD_data1$Map$position + add.reps1)
-  }
-  
-  axis(2, las = 1)
-  mtext(text = sig.unit,side = 2,line = 2.5, col = colours[orig.wmt])
-  
-  for(yline in chm.ends[-c(1,length(chm.ends))] + inter_chm_gap/2) abline(v = yline, col = LGdiv.col,lty = 3)
-  
-  ## Now overlay with the other data:
-  for(j in 2:length(LOD_data.ls)){
+  ## Pass to the 3 possible plotting functions:
+  if(layout == "l" & !overlay){
+    plotQTL.genome_linear(LOD_data = LOD_data,
+                          inter_chm_gap = inter_chm_gap,
+                          overlay = FALSE,
+                          ylimits = ylimits,
+                          sig.unit = sig.unit,
+                          plot_type = plot_type,
+                          colour = colour,
+                          add_xaxis = add_xaxis,
+                          add_rug = add_rug,
+                          add_thresh = add_thresh,
+                          override_thresh = override_thresh,
+                          thresh.lty = thresh.lty,
+                          thresh.lwd = thresh.lwd,
+                          thresh.col = thresh.col,
+                          return_plotData = return_plotData,
+                          show_thresh_CI = show_thresh_CI,
+                          use_LG_names = use_LG_names,
+                          axis_label.cex = axis_label.cex,
+                          custom_LG_names = custom_LG_names,
+                          LGdiv.col = "gray42",
+                          ylab.at = ylab.at,
+                          highlight_positions = highlight_positions,
+                          ...)
     
-    par(new = TRUE)
-
-    plot(NULL, xlim=range(plotdata.ls[[j]]$xposns),ylim = shrink.range(ylimits.ls[[j]]),
-         axes=FALSE,xlab = "", ylab = "")
+  } else if(layout == "l" & overlay){
     
-    for(ch in unique(plotdata.ls[[j]]$chromosome)) {
+    if(linear_list){
+      plotQTL.genome_linear_list(LOD_data.ls = LOD_data,
+                                 inter_chm_gap = inter_chm_gap,
+                                 ylimits = ylimits,
+                                 sig.unit = sig.unit,
+                                 plot_type = plot_type,
+                                 add_xaxis = add_xaxis,
+                                 add_rug = add_rug,
+                                 colours = colour, #the plotLinearQTL_list function used colours, not colour for this argument
+                                 ylab.at = ylab.at, 
+                                 thresh.lty = thresh.lty,
+                                 thresh.lwd = thresh.lwd,
+                                 thresh.col = thresh.col,
+                                 return_plotData = return_plotData,
+                                 highlight_positions = highlight_positions,
+                                 LGdiv.col = LGdiv.col,
+                                 use_LG_names = use_LG_names,
+                                 axis_label.cex = axis_label.cex,
+                                 custom_LG_names = custom_LG_names,
+                                 override_thresh = override_thresh,
+                                 ...)
+    } else{
+      ## the user would like to overlay plots but does not want to rescale, or thresholds were absent
+      # Determine the plotting region
+      if(is.null(ylimits)){
+        maxy <- max(unlist(sapply(lapply(LOD_data, "[[","QTL.res"),"[[","LOD")))
+        ylimits = c(0,maxy)
+      }
       
-      if(plot_type[j] == "lines"){
-        lines(plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"xposns"],
-              plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"LOD"],col = colours[j],...)
-
-      } else{
-        points(plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"xposns"],
-               plotdata.ls[[j]][plotdata.ls[[j]]$chromosome == ch,"LOD"],col = colours[j],...)
+      plotQTL.genome_linear(LOD_data = LOD_data[[1]],
+                            inter_chm_gap = inter_chm_gap,
+                            overlay = FALSE,
+                            ylimits = ylimits,
+                            sig.unit = sig.unit,
+                            plot_type = plot_type[1],
+                            colour = colour[1],
+                            add_xaxis = add_xaxis,
+                            add_rug = add_rug,
+                            add_thresh = add_thresh,
+                            override_thresh = override_thresh,
+                            thresh.lty = thresh.lty,
+                            thresh.lwd = thresh.lwd,
+                            thresh.col = thresh.col[1],
+                            return_plotData = return_plotData,
+                            show_thresh_CI = show_thresh_CI,
+                            use_LG_names = use_LG_names,
+                            axis_label.cex = axis_label.cex,
+                            custom_LG_names = custom_LG_names,
+                            LGdiv.col = "gray42",
+                            ylab.at = ylab.at,
+                            highlight_positions = highlight_positions,
+                            ...)
+      
+      ## Overlay the rest of the plots
+      for(i in 2:length(LOD_data)){
+        plotQTL.genome_linear(LOD_data = LOD_data[[i]],
+                              inter_chm_gap = inter_chm_gap,
+                              overlay = TRUE,
+                              ylimits = ylimits,
+                              sig.unit = sig.unit,
+                              plot_type = plot_type[i],
+                              colour = colour[i],
+                              add_xaxis = add_xaxis,
+                              add_rug = add_rug,
+                              add_thresh = add_thresh,
+                              override_thresh = override_thresh,
+                              thresh.lty = thresh.lty,
+                              thresh.lwd = thresh.lwd,
+                              thresh.col = thresh.col[i],
+                              return_plotData = return_plotData,
+                              show_thresh_CI = show_thresh_CI,
+                              use_LG_names = use_LG_names,
+                              axis_label.cex = axis_label.cex,
+                              custom_LG_names = custom_LG_names,
+                              LGdiv.col = "gray42",
+                              ylab.at = ylab.at,
+                              highlight_positions = highlight_positions,
+                              ...)
       }
     }
     
-    if(hp && !is.null(hp.ls[[j]])){
-          abline(v = hp.ls[[j]]$xposn, col = colours[j])
-          points(x = hp.ls[[j]]$xposn, y = rep(0,nrow(hp.ls[[j]])),
-                 pch = 17, col = colours[j])
-          }
-    
-    segments(par("usr")[1], LOD_data.ls[[j]]$Perm.res$threshold,
-             par("usr")[2], LOD_data.ls[[j]]$Perm.res$threshold,
-             lty=thresh.lty,lwd=thresh.lwd,col=thresh.col)
-    
-  } #for (j...)
-  
-  ## Add data1 at the end for emphasis (overlay)
-  par(new = TRUE)
-  
-  plot(NULL, xlim=range(plotdata.ls[[1]]$xposns),ylim = shrink.range(ylimits.ls[[1]]),
-       axes=FALSE,xlab = "", ylab = "") 
-  
-  for(ch in unique(plotdata1$chromosome)) {
-    if(plot_type[1] == "lines"){
-      lines(plotdata.ls[[1]][plotdata.ls[[1]]$chromosome == ch,"xposns"],
-            plotdata.ls[[1]][plotdata.ls[[1]]$chromosome == ch,"LOD"],col = colours[1],lwd = main.size, lty = main.lty)
-    } else{
-      points(plotdata.ls[[1]][plotdata.ls[[1]]$chromosome == ch,"xposns"],
-             plotdata.ls[[1]][plotdata.ls[[1]]$chromosome == ch,"LOD"],col = colours[1],cex = main.size, ...)
-    }
-  }
-  
-  if(hp && !is.null(hp.ls[[1]])){
-    abline(v = hp.ls[[1]]$xposn, col = colours[1])
-    points(x = hp.ls[[1]]$xposn, y = rep(0,nrow(hp.ls[[1]])),
-           pch = 17, col = colours[1])
-  }
-  
-  ## Add the significance threshold (this is at the correct level for all plots now...)
-  segments(par("usr")[1],LOD_data1$Perm.res$threshold,
-           par("usr")[2],LOD_data1$Perm.res$threshold,
-           lty=thresh.lty,lwd=thresh.lwd,col=thresh.col)
-  
-  box()
-  
-  if(return_plotData) {
-    return(plotdata.ls)
-  } else{
-    return(NULL)
-  }
-  
-} #plotLinearQTL_list
 
-#' Plot the results of a previous QTL analysis
-#' @description Basic QTL plotting function, taking map positions and significance levels as input
-#' @param LOD_data Output list from \code{\link{QTLscan}} with items QTL.res and Perm.res (the latter can be \code{NULL})
-#' @param support_interval Numeric. If 0 (by default) then there is no support interval returned. If greater than zero,
-#'  then a LOD support interval is shown on output plot and the bounds are returned.
-#' @param ylimits Use to specify ylimits of plot region, though by default \code{NULL} in which case a suitable plot region is automatically used.
-#' @param multiplot Vector of integers. By default \code{NULL}. If \code{LOD_data} contains results from multiple linkage groups, you can
-#' define the number of rows and columns in the plot layout.
-#' @param plot_type How should be plots be drawn, either "lines" or "points" are possible
-#' @param overlay Add to an existing plot (should be produced by a comparable call to this function) or not? By default \code{FALSE},
-#' in which case a new plot is drawn. Can be useful for displaying results of multiple analyses together.
-#' @param add_xaxis Should an x-axis be drawn? If multiple QTL analyses are performed on different traits, specifying this to be \code{FALSE}
-#' and using \code{par(mar=c(0,4.1,4.1,2.1))} allows subsequent plots to be neatly stacked.
-#' @param add_rug Logical, by default \code{TRUE} - should original marker points be added to plot?
-#' @param mainTitle Vector of plot titles (single character vector also allowed and will be recycled). For no plot titles, leave as \code{FALSE}
-#' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
-#' @param \dots Extra arguments passed to plotting functions (plot, lines / points)
-#' @return The cM bounds of the LOD support interval, if \code{support_interval} > 0.
-#' @examples
-#' data("qtl_LODs.4x")
-#' plotQTL(LOD_data = qtl_LODs.4x,multiplot = c(1,2),ylimits = c(0,5), plot_type = "points")
-#' @export
-plotQTL <- function(LOD_data,
-                    support_interval = 0,
-                    ylimits = NULL,
-                    multiplot = NULL,
-                    plot_type = "lines",
-                    overlay = FALSE,
-                    add_xaxis = TRUE,
-                    add_rug = TRUE,
-                    mainTitle = FALSE,
-                    log = NULL,
-                    ...){
-  
-  plot_type <- match.arg(plot_type, choices = c("lines","points"))
-  
-  oldpar <- par(no.readonly = TRUE)
-  on.exit(par(oldpar)) # Thanks Gregor 
-  
-  
-  if(is.null(log)) {
-    log.conn <- stdout()
-  } else {
-    matc <- match.call()
-    write.logheader(matc, log)
-    log.conn <- file(log, "a")
-  }
-  
-  ## Check whether there is a LOD thresold:
-  LOD_threshold <- 0
-  if(!is.null(LOD_data$Perm.res)) LOD_threshold <- LOD_data$Perm.res$threshold
-  
-  plot_LODcM <- function(cMpositions,LOD,chm,...){
+  } else if(layout == "s" & !overlay){
     
-    if(!overlay){
-      if(is.null(ylimits)) ylimits <- range(LOD)
+    plotQTL.single_LG(LOD_data = LOD_data,
+                      ylimits = ylimits,
+                      multiplot = NULL,
+                      plot_type = plot_type,
+                      overlay = FALSE,
+                      add_xaxis = add_xaxis,
+                      add_rug = add_rug,
+                      mainTitle = mainTitle,
+                      override_thresh = override_thresh,
+                      thresh.lty = thresh.lty,
+                      thresh.lwd = thresh.lwd,
+                      thresh.col = thresh.col,
+                      colour = colour[1],
+                      axis_label.cex = axis_label.cex,
+                      ...)
+    
+  } else if(layout == "s" & overlay){
+    ## Draw first plot:
+    if(length(LOD_data[[1]]$LG_names) > 1) stop("It is not possible to overlay multiple analyses and multiple chromosomes with layout = 's'. Use layout 'l' instead.")
+    plotQTL.single_LG(LOD_data = LOD_data[[1]],
+                      ylimits = ylimits,
+                      multiplot = NULL,
+                      plot_type = plot_type[1],
+                      overlay = FALSE,
+                      add_xaxis = add_xaxis,
+                      add_rug = add_rug,
+                      mainTitle = mainTitle,
+                      override_thresh = override_thresh,
+                      thresh.lty = thresh.lty,
+                      thresh.lwd = thresh.lwd,
+                      thresh.col = thresh.col,
+                      colour = colour[1],
+                      axis_label.cex = axis_label.cex,
+                      ...)
+    ## Overlay subsequent plots:
+    for(i in 2:length(LOD_data)){
+      tempdata <- LOD_data[[i]]
+      if(length(tempdata$LG_names) > 1) stop("It is not possible to overlay multiple analyses and multiple chromosomes with layout = 's'. Use layout 'l' instead.")
       
-      plot.title <- ifelse(mainTitle[1] == FALSE,"",
-                           ifelse(length(mainTitle) >= chm, mainTitle[chm],mainTitle[1]))
-      
-      plot(NULL,xlim=range(cMpositions),
-           ylim = ylimits,xlab=ifelse(add_xaxis,"cM",""),ylab="LOD",
-           main = plot.title,axes = FALSE,...)
-      if(add_xaxis) axis(1)
-      axis(2, las = 1)
-      if(add_rug) rug(LOD_data$Map[LOD_data$Map[,"chromosome"] == chm,"position"])
-      
+      plotQTL.single_LG(LOD_data = tempdata,
+                        ylimits = ylimits,
+                        multiplot = NULL,
+                        plot_type = plot_type[i],
+                        overlay = TRUE,
+                        add_xaxis = add_xaxis,
+                        add_rug = add_rug,
+                        mainTitle = mainTitle,
+                        override_thresh = override_thresh,
+                        thresh.lty = thresh.lty,
+                        thresh.lwd = thresh.lwd,
+                        thresh.col = thresh.col,
+                        colour = colour[i],
+                        axis_label.cex = axis_label.cex,
+                        ...)
     }
+  } else if(layout == "g" & !overlay){
     
-    if(plot_type == "lines") {
-      lines(cMpositions,LOD,...)
-    } else{
-      points(cMpositions,LOD,...)
-    }
+    plotQTL.single_LG(LOD_data = LOD_data,
+                      ylimits = ylimits,
+                      multiplot = multiplot,
+                      plot_type = plot_type,
+                      overlay = FALSE,
+                      add_xaxis = add_xaxis,
+                      add_rug = add_rug,
+                      mainTitle = mainTitle,
+                      override_thresh = override_thresh,
+                      thresh.lty = thresh.lty,
+                      thresh.lwd = thresh.lwd,
+                      thresh.col = thresh.col,
+                      colour = colour[1],
+                      axis_label.cex = axis_label.cex,
+                      ...)
     
-    if(LOD_threshold > 0) segments(par("usr")[1],LOD_threshold,
-                                   par("usr")[2],LOD_threshold,
-                                   lty=3,lwd=2,col="red2")
-    LODsupport <- 0
-    
-    if(support_interval > 0){
-      maxLODmin <- max(LOD) - support_interval
-      LODsupport <- cMpositions[which(LOD >= maxLODmin)]
-      if(length(LODsupport) >= 2) {
-        segments(x0=min(LODsupport),y0=maxLODmin,x1=max(LODsupport),y1=maxLODmin,lwd=3,col="red2")
-        segments(x0=min(LODsupport),y0=par("usr")[3],x1=min(LODsupport),y1=maxLODmin,lwd=1,lty=2,col="red2")
-        segments(x0=max(LODsupport),y0=par("usr")[3],x1=max(LODsupport),y1=maxLODmin,lwd=1,lty=2,col="red2")
-      }
-    }
-    
-    
-    return(range(LODsupport))
+  } else if(layout == "g" & overlay){
+    stop("It is not possible to overlay multiple analyses and multiple chromosomes with layout = 'g'. Use layout 'l' instead.")
   }
   
-  linkage_group <- sort(unique(LOD_data$QTL.res[,"chromosome"]))
-  
-  if(!is.null(multiplot) & length(multiplot)==2) {
-    layout(matrix(1:(prod(multiplot)),
-                  nrow=multiplot[1],
-                  ncol=multiplot[2],
-                  byrow=TRUE))
-  }
-  
-  
-  support <- sapply(linkage_group, function(chr){
-    chmDat <- LOD_data$QTL.res[LOD_data$QTL.res[,"chromosome"] == chr,]
-    plot_LODcM(cMpositions = chmDat[,"position"],
-               LOD = chmDat[,"LOD"],
-               chm = chr,
-               ...)
-  }
-  )
-  
-  # Fill in any remaining empty plot spaces:
-  if(!is.null(multiplot) & prod(multiplot)>length(linkage_group)){
-    over <- prod(multiplot) - length(linkage_group)
-    for(i in seq(1:over)) plot(NULL,xlim=c(0,1),ylim=c(0,1),
-                               xlab=NA,ylab=NA,axes=F)
-  }
-  
-  
-  if (!is.null(log))
-    close(log.conn)
-  
-  # if(!is.null(multiplot)) par(mfrow=c(1,1))
-  
-  if(support_interval > 0) return(t(support))
 } #plotQTL
+
+
+#' Deprecated function name for plotLinearQTL, still maintained in package version 0.1.0
+#' @rdname plotQTL
+#' @export
+plotLinearQTL <- plotQTL
+
+#' Deprecated function name for plotLinearQTL_list, still maintained in package version 0.1.0
+#' @rdname plotQTL
+#' @export
+plotLinearQTL_list <- plotQTL
+
 
 
 #' Plot the recombination landscape across the genome
@@ -2446,7 +2595,9 @@ plotRecLS <- function(recombination_data,
             # in this case there are multiple possible valency solutions - combine them:
             val.combined <- do.call(rbind,val.dat)
             
-            if(ncol(val.combined) == 2){
+            if(is.null(val.combined)){
+              val.out <- NULL
+            } else if(ncol(val.combined) == 2){
               cM.unique <- sort(unique(as.numeric(val.combined[,"cM"])))
               # val.out <- as.data.frame(matrix(0,nrow = length(cM.unique),ncol = 3,
               # dimnames = list(NULL,c("cM","Pr","Ind"))))
@@ -2524,7 +2675,7 @@ plotRecLS <- function(recombination_data,
   
   ## Return output of both dimensions:
   invisible(list(per_LG = perLG.ls,
-              per_individual = offspring_counts))
+                 per_individual = offspring_counts))
   
 } #plotRecLS
 
@@ -2591,8 +2742,8 @@ PVE <- function(IBD_list,
   ploidy2 <- IBD_list[[1]]$ploidy2
   
   ## Check the list depth:
-  listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
-  if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
+  # listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
+  # if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
   
   IBDarray <- IBD_list[[1]]$IBDarray
   IBDtype <- IBD_list[[1]]$IBDtype
@@ -2600,29 +2751,29 @@ PVE <- function(IBD_list,
   gap <- IBD_list[[1]]$gap
   
   if(IBDtype == "genotypeIBD"){
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
+    # if(IBD_list[[1]]$method == "hmm_TO"){
+    #   ## We are using the output of TetraOrigin
+    #   GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
+    #   Nstates <- nrow(GenCodes)
+    #   indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    #   for(r in 1:nrow(indicatorMatrix)){
+    #     for(h in 1:ncol(GenCodes)){
+    #       indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
+    #     }
+    #   }
+    #   
+    # } else{
+    ## We are using the output of estimate_IBD
+    GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
+    Nstates <- nrow(GenCodes)
+    indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    for(r in 1:nrow(indicatorMatrix)){
+      for(h in 1:ncol(GenCodes)){
+        indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
       }
-      
-    } else{
-      ## We are using the output of estimate_IBD
-      GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
-      }
-      
     }
+    
+    # }
     
   } else if(IBDtype == "haplotypeIBD"){
     Nstates <- ploidy + ploidy2 #this is not actually needed..
@@ -2806,27 +2957,27 @@ PVE <- function(IBD_list,
         lg <- QTL_df[l,1]
         temp.IBD <- IBD_list[[lg]]$IBDarray
         map <- IBD_list[[lg]]$map
-          
-          if(is.null(gap)){ #no splines were fitted..
-              ## Try to find where the QTL should fit:
-              minpos <- which.min(abs(QTL_df[l,2] - map$position))
-              tempIBD <- t(temp.IBD[minpos,,phenoGeno])
-              
-              if(min(abs(QTL_df[l,2] - map$position)) > 0)
-                
-                warning(paste(QTL_df[l,2],"does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
-              
-          } else{
-            tempIBD <- t(temp.IBD[paste0("cM",as.character(QTL_df[l,2])),,phenoGeno])
-          }
         
-          if(IBDtype == "haplotypeIBD"){
-            out <- tempIBD
-          } else{
-            out <- tempIBD %*% indicatorMatrix
-          }
-          ## Exert boundary condition:
-          out <- out[,setdiff(1:(ploidy + ploidy2),c(1,ploidy + 1))]
+        if(is.null(gap)){ #no splines were fitted..
+          ## Try to find where the QTL should fit:
+          minpos <- which.min(abs(QTL_df[l,2] - map$position))
+          tempIBD <- t(temp.IBD[minpos,,phenoGeno])
+          
+          if(min(abs(QTL_df[l,2] - map$position)) > 0)
+            
+            warning(paste(QTL_df[l,2],"does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
+          
+        } else{
+          tempIBD <- t(temp.IBD[paste0("cM",as.character(QTL_df[l,2])),,phenoGeno])
+        }
+        
+        if(IBDtype == "haplotypeIBD"){
+          out <- tempIBD
+        } else{
+          out <- tempIBD %*% indicatorMatrix
+        }
+        ## Exert boundary condition:
+        out <- out[,setdiff(1:(ploidy + ploidy2),c(1,ploidy + 1))]
         
         ## Need to concatenate if there are blocks:
         out.bl <- do.call(rbind, lapply(1:nr.block, function(x) out))
@@ -2864,9 +3015,20 @@ PVE <- function(IBD_list,
 #' @param genotype.ID The colname of \code{Phenotype.df} that contains the offspring identifiers (F1 names)
 #' @param trait.ID The colname of \code{Phenotype.df} that contains the response variable to use in the model
 #' @param block The blocking factor to be used, if any (must be colname of \code{Phenotype.df}). By default \code{NULL}, in which case no blocking structure (for unreplicated experiments)
-#' @param cofactor_df A 2-column data frame of co-factor(s); column 1 gives linkage group identifiers, column 2 specifies the cM position of the co-factors. By default \code{NULL}, in which case no co-factors are included in the analysis.
-#' @param folder If markers are to be used as co-factors, the path to the folder in which the imported IBD probabilities is contained can be provided here. By default this is \code{NULL}, if files are in working directory.
-#' @param filename.short If TetraOrigin was used and co-factors are being included, the shortened stem of the filename of the \code{.csv} files containing the output of TetraOrigin, i.e. without the tail "_LinkageGroupX_Summary.csv" which is added by default to all output of TetraOrigin.
+#' @param cofactor_df A 3-column data frame of co-factor(s); column 1 gives the numeric linkage group identifier(s), 
+#' column 2 specifies the cM position of the co-factor(s), column 3 specifies whether the QTL was fitted using "a" = additive effects or 
+#' "f" = full allelic interactions (note that any other symbol for the full model will also be accepted, as long as it is not "a"). 
+#' For backward compatibility with package versions <= 0.0.9, it is possible to just supply the first two columns, 
+#' in which case an additive-effects model is assumed for each cofactor (so, a third column will be automatically filled with "a"). 
+#' By default \code{cofactor_df = NULL}, in which case no co-factors are included in the analysis.
+#' @param allelic_interaction The QTL detection model can be for additive main effects only (by default \code{allelic_interaction = FALSE}). If \code{TRUE}, then the full model is used
+#' (i.e. all possible genotype combinations are included as predictors in the model). This runs the risk of overfitting, especially if double reduction was also allowed. 
+#' Both types of analyses can ideally be performed and compared. Note that if IBD probabilities were estimated using the "heuristic" method rather than the HMM method 
+#' (see \code{\link{estimate_IBD}}), then IBDs are actually haplotype probabilities rather than genotype probabilities, meaning that allelic interaction effects cannot be included in the model.
+#' @param folder If markers are to be used as co-factors, the path to the folder in which the imported IBD probabilities is contained can be provided here. 
+#' By default this is \code{NULL}, if files are in working directory.
+#' @param filename.short If TetraOrigin was used and co-factors are being included, the shortened stem of the filename of the \code{.csv} files containing the output of TetraOrigin, 
+#' i.e. without the tail "_LinkageGroupX_Summary.csv" which is added by default to all output of TetraOrigin.
 #' @param prop_Pheno_rep The minimum proportion of phenotypes represented across blocks. If less than this, the individual is removed from the analysis. If there is incomplete
 #' data, the missing phenotypes are imputed using the mean values across the recorded observations.
 #' @param perm_test Logical, by default \code{FALSE}. If \code{TRUE}, a permutation test will be performed to determine a
@@ -2881,19 +3043,20 @@ PVE <- function(IBD_list,
 #' @param \dots Arguments passed to \code{\link{plot}}
 #' @return
 #' A nested list; each list element (per linkage group) contains the following items:
-#' \itemize{
-#' \item{QTL.res : }{Single matrix of QTL results with columns chromosome, position, LOD, adj.r.squared and PVE (percentage variance explained).}
-#' \item{Perm.res : }{If \code{perm_test} = \code{FALSE}, this will be \code{NULL}.
+#' \describe{
+#' \item{QTL.res}{Single matrix of QTL results with columns chromosome, position, LOD, adj.r.squared and PVE (percentage variance explained).}
+#' \item{Perm.res}{If \code{perm_test} = \code{FALSE}, this will be \code{NULL}.
 #' Otherwise, Perm.res contains a list of the results of the permutation test, with list items
 #' "quantile","threshold" and "scores". Quantile refers to which quantile of scores was used to determine the threshold.
 #' Note that scores are each of the maximal LOD scores across the entire genome scan per permutation, thus returning a
 #' genome-wide threshold rather than a chromosome-specific threshold. If the latter is preferred, restricting the
 #' \code{IBD_list} to a single chromosome and re-running the permutation test will provide the desired threshold.}
-#' \item{Residuals : }{If a blocking factor or co-factors are used, this is the (named) vector of residuals used as input for the
+#' \item{Residuals}{If a blocking factor or co-factors are used, this is the (named) vector of residuals used as input for the
 #' QTL scan. Otherwise, this is the set of (raw) phenotypes used in the QTL scan.}
-#' \item{Map : }{Original map of genetic marker positions upon which the IBDs were based, most often used
+#' \item{Map}{Original map of genetic marker positions upon which the IBDs were based, most often used
 #' for adding rug of marker positions to QTL plots.}
-#' \item{LG_names : }{Names of the linkage groups}
+#' \item{LG_names}{Names of the linkage groups}
+#' \item{allelic_interaction}{Whether argument \code{allelic_interaction} was \code{TRUE} or \code{FALSE} in the QTL scan}
 #' }
 #' @examples
 #' data("IBD_4x","Phenotypes_4x")
@@ -2908,9 +3071,10 @@ QTLscan <- function(IBD_list,
                     genotype.ID,
                     trait.ID,
                     block = NULL,
+                    cofactor_df = NULL,
+                    allelic_interaction = FALSE,
                     folder = NULL,
                     filename.short,
-                    cofactor_df = NULL,
                     prop_Pheno_rep = 0.5,
                     perm_test = FALSE,
                     N_perm.max = 1000,
@@ -2921,6 +3085,9 @@ QTLscan <- function(IBD_list,
                     verbose = TRUE,
                     ...){
   
+  ## Run some initial checks:
+  if(!trait.ID %in% colnames(Phenotype.df)) stop("Trait colname incorrectly specified.")
+  if(!genotype.ID %in% colnames(Phenotype.df)) stop("Genotype colname incorrectly specified.")
   IBD_list <- test_IBD_list(IBD_list)
   
   ploidy <- IBD_list[[1]]$ploidy
@@ -2937,6 +3104,7 @@ QTLscan <- function(IBD_list,
                         ploidy2 = ploidy2,
                         N_perm = N_perm.max,
                         alpha = alpha,
+                        allelic_interaction = allelic_interaction,
                         ncores = ncores,
                         verbose = verbose,
                         log = log))
@@ -2951,30 +3119,22 @@ QTLscan <- function(IBD_list,
       log.conn <- file(log, "a")
     }
     
-    ## Run some initial checks:
     if(!is.null(block)) if(!block %in% colnames(Phenotype.df)) stop("Blocking factor incorrectly specified.")
-    if(!trait.ID %in% colnames(Phenotype.df)) stop("Trait colname incorrectly specified.")
     
     blockTF <- cofactTF <- FALSE
     if(!is.null(block)) blockTF <- TRUE
     if(!is.null(cofactor_df)) cofactTF <- TRUE
-    
-    ## Check the list depth:
-    listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
-    if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
     
     IBDarray <- IBD_list[[1]]$IBDarray
     IBDtype <- IBD_list[[1]]$IBDtype
     bivalent_decoding <- IBD_list[[1]]$biv_dec
     gap <- IBD_list[[1]]$gap
     
+    if(IBDtype == "haplotypeIBD" & allelic_interaction) stop("QTL model with allele interactions is not possible with IBD probabilities generated using the heuristic method. Please re-run estimate_IBD using method = 'HMM'")
+    
     if(IBDtype == "genotypeIBD"){
       if(is.numeric(IBD_list[[1]]$genocodes)){
         ## We are using the output of TetraOrigin
-        # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-        # mname <- paste0("GenotypeMat",Nstates)
-        # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-        # 
         GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
         Nstates <- nrow(GenCodes)
         indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
@@ -2997,7 +3157,6 @@ QTLscan <- function(IBD_list,
         
       }
       
-      # indicatorMatrix <- as.matrix(indicatorMatrix[,-c(1,ploidy+1)])
     } else if(IBDtype == "haplotypeIBD"){
       Nstates <- ploidy + ploidy2 #this is not actually needed..
       indicatorMatrix <- NULL
@@ -3162,71 +3321,46 @@ QTLscan <- function(IBD_list,
     if(popSize < ploidy + ploidy2) stop("Insufficient population size to fit QTL model with IBD probabilities. Suggest to use single marker approach")
     if(popSize <= 2*(ploidy + ploidy2)) warning("Population size may be too small for accurate model fitting. Results should be interpreted with caution.")
     
-    ## Now deal with whether there is a (genetic) co-factor being included:
+    ## Now deal with whether there is a (genetic) co-factor being included
     if(cofactTF){
+      if(ncol(cofactor_df) == 2){
+        cofactor_df[,3] <- "a" #for backward compatibility with v. <= 0.0.9
+      }
+      
       cof.mat <- do.call("cbind",lapply(1:nrow(cofactor_df), function(l) {
-        # message(l)
         
         lg <- cofactor_df[l,1]
         
-        # if(cofactor_df[l,2] == "marker"){
-        #   
-        #   if(IBDtype == "genotypeIBD"){
-        #     if(!is.null(folder)) {
-        #       path.to.file <- file.path(folder,paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv"))
-        #     } else {
-        #       path.to.file <- paste0(filename.short,"_LinkageGroup",lg,"_Summary.csv")
-        #     }
-        #     
-        #     suppressWarnings(input_lines <- readLines(path.to.file))
-        #     placeholders <- grep("inferTetraOrigin-Summary",input_lines)
-        #     genotypeProbs <- read.csv(path.to.file,
-        #                               skip = placeholders[7],
-        #                               nrows = (placeholders[8] - placeholders[7] - 2),
-        #                               stringsAsFactor=FALSE,header = TRUE)[-1,]
-        #     
-        #     genoLabels <- sapply(1:nrow(genotypeProbs), function(r) strsplit(genotypeProbs[r,1],"_g")[[1]][1])
-        #     
-        #     temp <- genotypeProbs[genoLabels %in% phenoGeno,as.character(cofactor_df[l,3]),drop=FALSE]
-        #     ## Convert this into haplotype probabilities directly:
-        #     out <- t(sapply(1:(nrow(temp)/Nstates),function(n) t(temp[(Nstates*(n-1)+1):(Nstates*n),,drop=FALSE])%*%indicatorMatrix))
-        #   } else{
-        #     stop("Unable to process - please specify the marker position instead")
-        #   }
-        #   
-        #   
-        # } else{ #the co-factor is a IBD'd position, not a specific marker
-          
         temp.IBD <- IBD_list[[lg]]$IBDarray
         map <- IBD_list[[lg]]$map
-          
+        
         if(is.null(gap)){
-            if(!as.character(cofactor_df[l,2]) %in% dimnames(temp.IBD)[[1]]){
-              
-              # if(!is.numeric(cofactor_df[l,2])) stop("If co-factor is specified as a 'position', please use its precise cM position, or (in case no splines were fitted) exact marker name!")
-              
-              ## Try to find where the co-factor should fit:
-              minpos <- which.min(abs(cofactor_df[l,2] - map$position))
-              tempIBD <- t(temp.IBD[minpos,,phenoGeno])
-              
-              if(min(abs(cofactor_df[l,2] - map$position)) > 0)
-                warning(paste(as.character(cofactor_df[l,2]),
-                              "does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
-              
-            } else{
-              tempIBD <- t(temp.IBD[as.character(cofactor_df[l,2]),,phenoGeno])
-            }
+          if(!as.character(cofactor_df[l,2]) %in% dimnames(temp.IBD)[[1]]){
+            ## Try to find where the co-factor should fit:
+            minpos <- which.min(abs(cofactor_df[l,2] - map$position))
+            tempIBD <- t(temp.IBD[minpos,,phenoGeno])
+            
+            if(min(abs(cofactor_df[l,2] - map$position)) > 0)
+              warning(paste(as.character(cofactor_df[l,2]),
+                            "does not specify the co-factor position precisely! Proceeding with nearest alternative position of", map$position[minpos]))
+            
           } else{
-            tempIBD <- t(temp.IBD[paste0("cM",as.character(cofactor_df[l,2])),,phenoGeno])
+            tempIBD <- t(temp.IBD[as.character(cofactor_df[l,2]),,phenoGeno])
           }
-          
-          
-          if(IBDtype == "haplotypeIBD"){
-            out <- tempIBD
-          } else{
+        } else{
+          tempIBD <- t(temp.IBD[paste0("cM",as.character(cofactor_df[l,2])),,phenoGeno])
+        }
+        
+        
+        if(IBDtype == "haplotypeIBD"){
+          out <- tempIBD
+        } else{
+          if(cofactor_df[l,3] == "a"){
             out <- tempIBD %*% indicatorMatrix
+          } else{
+            out <- tempIBD #this co-factor was detected with the full QTL model
           }
-        # }
+        }
         
         ## Need to concatenate if there are blocks:
         out.bl <- do.call(rbind, lapply(1:nr.block, function(x) out))
@@ -3292,16 +3426,28 @@ QTLscan <- function(IBD_list,
                         "% of IBDs at supplied peak were NA. Proceeding without..."))
           IBDmat[is.na(IBDmat)] <- 0
         }
-        temp.haplo <- t(IBDmat)%*%indicatorMatrix
+        if(!allelic_interaction){
+          temp.haplo <- t(IBDmat)%*%indicatorMatrix
+        } else{
+          temp.haplo <- t(IBDmat)
+        }
+        
       } else{
         temp.haplo <- t(IBDmat)
       }
       
-      colnames(temp.haplo) <- paste0("X", 1:(ploidy + ploidy2))
+      # colnames(temp.haplo) <- paste0("X", 1:(ploidy + ploidy2))
+      colnames(temp.haplo) <- paste0("X", 1:ncol(temp.haplo)) #this is more general
       
       if(blockTF) temp.haplo <- do.call("rbind", lapply(1:nr.block, function(n) temp.haplo))
       
-      modelterms <- paste0("X", setdiff(1:(ploidy + ploidy2),c(1,ploidy + 1))) #boundary condition applied
+      if(!allelic_interaction){
+        modelterms <- paste0("X", setdiff(1:(ploidy + ploidy2),c(1,ploidy + 1))) #boundary condition applied
+      } else{
+        modelterms <- colnames(temp.haplo)
+      }
+      
+      # modelterms <- paste0("X", setdiff(1:(ploidy + ploidy2),c(1,ploidy + 1))) #boundary condition applied
       lmDat <- as.data.frame(cbind(matrix(residual_vect,ncol=1),temp.haplo))
       colnames(lmDat)[1] <- "Resid.pheno"
       lmform <- as.formula(paste("Resid.pheno ~ ", paste(modelterms, collapse = " + "), collapse = ""))
@@ -3341,18 +3487,29 @@ QTLscan <- function(IBD_list,
                                 pl2,
                                 popN,
                                 RSSzero,
+                                ai,
                                 numblock = 1){
           
           if(IBDtyp == "genotypeIBD"){
-            temp.haplo <- t(IBDmat)%*%XMatrix
+            if(!ai){
+              temp.haplo <- t(IBDmat)%*%XMatrix
+            } else{
+              temp.haplo <- t(IBDmat)
+            }
+            
           } else{
             temp.haplo <- t(IBDmat)
           }
-          colnames(temp.haplo) <- paste0("X", 1:(pl + pl2))
+          # colnames(temp.haplo) <- paste0("X", 1:(pl + pl2))
+          colnames(temp.haplo) <- paste0("X", 1:ncol(temp.haplo))
           
           if(blockTF) temp.haplo <- do.call("rbind", lapply(1:numblock, function(n) temp.haplo))
           
-          modelterms <- paste0("X", setdiff(1:(pl + pl2),c(1,pl + 1)))
+          if(!ai){
+            modelterms <- paste0("X", setdiff(1:(pl + pl2),c(1,pl + 1)))
+          } else{
+            modelterms <- colnames(temp.haplo)
+          }
           lmDat <- as.data.frame(cbind(matrix(residual_vect,ncol=1),temp.haplo))
           colnames(lmDat)[1] <- "Resid.pheno"
           lmform <- as.formula(paste("Resid.pheno ~ ", paste(modelterms, collapse = " + "), collapse = ""))
@@ -3419,7 +3576,8 @@ QTLscan <- function(IBD_list,
                                    IBDtyp = IBDtype,XMatrix = indicatorMatrix,
                                    pl = ploidy, pl2 = ploidy2,
                                    popN = popSize, RSSzero = RSS0,
-                                   numblock = nr.block)
+                                   numblock = nr.block,
+                                   ai = allelic_interaction)
       
       if(any(is.infinite(perm.LODs))){
         warning("Unable to run permutation tests!")
@@ -3439,7 +3597,8 @@ QTLscan <- function(IBD_list,
                                                     IBDtyp = IBDtype,XMatrix = indicatorMatrix,
                                                     pl = ploidy, pl2 = ploidy2,
                                                     popN = popSize, RSSzero = RSS0,
-                                                    numblock = nr.block))
+                                                    numblock = nr.block,
+                                                    ai = allelic_interaction))
           thresholds <- sort(perm.LODs)[NettletonDoerge(N=length(perm.LODs),alpha = alpha, gamma = gamma)]
           Nran <- Nran + Nmin
         }
@@ -3469,21 +3628,23 @@ QTLscan <- function(IBD_list,
     out.resid$Pheno <- resid.pheno
     
     if(!perm_test){
-      return(list("QTL.res" = output,
-                  "Perm.res" = NULL,
-                  "Residuals" = out.resid,
-                  "Map" = map,
-                  "LG_names" = names(IBD_list)))
+      return(list(QTL.res = output,
+                  Perm.res = NULL,
+                  Residuals = out.resid,
+                  Map = map,
+                  LG_names = names(IBD_list),
+                  allelic_interaction = allelic_interaction))
     } else{
-      return(list("QTL.res" = output,
-                  "Perm.res" = list(quantile = 1 - alpha,
-                                    threshold = mean(thresholds), #take the mean as the threshold
-                                    threshold.bounds = thresholds,
-                                    scores = perm.LODs,
-                                    Nperm = Nran),
-                  "Residuals" = out.resid,
-                  "Map" = map,
-                  "LG_names" = names(IBD_list)))
+      return(list(QTL.res = output,
+                  Perm.res = list(quantile = 1 - alpha,
+                                  threshold = mean(thresholds), #take the mean as the threshold
+                                  threshold.bounds = thresholds,
+                                  scores = perm.LODs,
+                                  Nperm = Nran),
+                  Residuals = out.resid,
+                  Map = map,
+                  LG_names = names(IBD_list),
+                  allelic_interaction = allelic_interaction))
     }
     
   }
@@ -3554,11 +3715,12 @@ segMaker <- function(ploidy,
 #' @param return_R2 Should the (adjusted) R2 of the model fit also be determined? 
 #' @param log Character string specifying the log filename to which standard output should be written. If \code{NULL} log is send to stdout.
 #' @return A list containing the following components:
-#' \itemize{
-#' \item{QTL.res : }{ The -log(p) of the model fit per marker are returned as "LOD" scores, although "LOP" would have been a better description.
+#' \describe{
+#' \item{QTL.res}{ The -log(p) of the model fit per marker are returned as "LOD" scores, although "LOP" would have been a better description.
 #' If requested, R2 values are also returned in column "R2adj"}
-#' \item{Perm.res : }{ The results of the permutation test if performed, otherwise \code{NULL}}
-#' \item{Map : }{ The linkage map if provided, otherwise \code{NULL}}
+#' \item{Perm.res}{ The results of the permutation test if performed, otherwise \code{NULL}}
+#' \item{Map}{ The linkage map if provided, otherwise \code{NULL}}
+#' \item{LG_names}{Names of the linkage groups, if a map was provided, otherwise \code{NULL}}
 #' }
 #' @examples
 #' data("SNP_dosages.4x","BLUEs.pheno")
@@ -3764,7 +3926,7 @@ singleMarkerRegression <- function(dosage_matrix,
       colnames(out.list$QTL.res)[3] <- "LOD" 
     }
     
-    out.list <- c(out.list,list("Map" = mapmat))
+    out.list <- c(out.list,list("Map" = mapmat, "LG_names" = names(maplist)))
     
   } else{ #No maplist
     
@@ -3776,7 +3938,7 @@ singleMarkerRegression <- function(dosage_matrix,
                                  dimnames = list(names(out.list$QTL.res),"LOD"))
     }
     
-    out.list <- c(out.list,list("Map" = NULL))
+    out.list <- c(out.list,list("Map" = NULL, "LG_names" = NULL))
   }
   
   ## For compatibility with IBD output
@@ -3917,6 +4079,8 @@ spline_IBD <- function(IBD_list,
 #' is limited to a specific region, which may be useful if fine-mapping a region of interest.
 #' @param remove_markers Optional vector of marker names to remove from the maps. Default is \code{NULL}.
 #' @param plot_maps Logical. Plot the marker positions of the selected markers using \code{polymapR::plot_map}.
+#' @param use_SN_phase Logical, by default \code{FALSE}. If \code{TRUE}, then 1x0 and 0x1 are binned per phase, to increase coverage of these
+#' marker types across parental homologues. If not, at most one of each are retained per bin.
 #' @param parent1 Identifier of parent 1, by default assumed to be \code{"P1"}
 #' @param parent2 Identifier of parent 2, by default assumed to be \code{"P2"}
 #' @param log Character string specifying the log filename to which standard output should be written. If NULL log is send to stdout.
@@ -3931,6 +4095,7 @@ thinmap <- function(maplist,
                     bounds = NULL,
                     remove_markers = NULL,
                     plot_maps = TRUE,
+                    use_SN_phase = FALSE,
                     parent1 = "P1",
                     parent2 = "P2",
                     log = NULL) {
@@ -3968,18 +4133,29 @@ thinmap <- function(maplist,
     
     binned.markers <- lapply(1:(length(bins)-1), function(n) as.character(map[,"marker"])[map[,"position"] >= bins[n] & map[,"position"] < bins[n+1]])
     
+    
     remove.marks <- function(merkers){
       numNA <- sapply(merkers, function(m) length(which(is.na(dosage_matrix[match(m,rownames(dosage_matrix)),3:ncol(dosage_matrix)]))))
+      
       ParSeg <- as.factor(sapply(merkers, function(m) paste0(dosage_matrix[match(m,rownames(dosage_matrix)),1],
                                                              dosage_matrix[match(m,rownames(dosage_matrix)),2]))
       )
+      
       whittled<-do.call(c,lapply(levels(ParSeg), function(ps) setdiff(names(ParSeg[ParSeg==ps]),names(which.min(numNA[ParSeg==ps])))
       ))
+      
       return(whittled)
     }
     
+    # if(!use_SN_phase){
     removed.markers <- do.call(c,lapply(seq(length(binned.markers)),function(l)
       if(length(binned.markers[[l]]) > 0) remove.marks(binned.markers[[l]])))
+    
+    # } else{
+    
+    # }
+    
+    
     map <- map[!map$marker%in%removed.markers,]
     
     if(length(which(map[,"marker"] %in% rownames(dosage_matrix))) != nrow(map)) {
@@ -4238,10 +4414,6 @@ visualiseHaplo <- function(IBD_list,
     log.conn <- file(log, "a")
   }
   
-  ## Check the list depth: - Note: this should be sent to test IBD list
-  listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
-  if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
-  
   if(length(linkage_group)!=1 | !is.numeric(linkage_group)) {
     if(length(IBD_list) != 1) stop("linkage_group should be a single numeric identifier.")
     linkage_group <- 1
@@ -4254,33 +4426,33 @@ visualiseHaplo <- function(IBD_list,
   
   if(IBDtype == "genotypeIBD"){
     
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      
-      GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
+    # if(IBD_list[[1]]$method == "hmm_TO"){
+    #   ## We are using the output of TetraOrigin
+    #   # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
+    #   # mname <- paste0("GenotypeMat",Nstates)
+    #   # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
+    #   
+    #   GenCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
+    #   Nstates <- nrow(GenCodes)
+    #   indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    #   for(r in 1:nrow(indicatorMatrix)){
+    #     for(h in 1:ncol(GenCodes)){
+    #       indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
+    #     }
+    #   }
+    #   
+    # } else{
+    ## We are using the output of estimate_IBD or PolyOrigin
+    GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
+    Nstates <- nrow(GenCodes)
+    indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
+    for(r in 1:nrow(indicatorMatrix)){
+      for(h in 1:ncol(GenCodes)){
+        indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
       }
-      
-    } else{
-      ## We are using the output of estimate_IBD
-      GenCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
-      Nstates <- nrow(GenCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenCodes)){
-          indicatorMatrix[r,GenCodes[r,h]] <- indicatorMatrix[r,GenCodes[r,h]] + 1
-        }
-      }
-      
     }
+    
+    # }
     
   } else if(IBDtype == "haplotypeIBD"){
     Nstates <- ploidy + ploidy2
@@ -4291,11 +4463,20 @@ visualiseHaplo <- function(IBD_list,
   
   if(dim(IBDarray)[2] %% Nstates != 0) stop("Incompatible input detected..")
   
-  
   if(!is.null(gap)) {
     cMpositions <- as.numeric(unlist(lapply(strsplit(dimnames(IBDarray)[[1]],"cM"),function(x) x[2])))
   } else{
     cMpositions <- IBD_list[[linkage_group]]$map$position
+    
+    # mapdata <- IBD_list[[linkage_group]]$map
+    # if("position" %in% colnames(mapdata)){
+    #   cMpositions <- mapdata[,"position"]
+    # } else if("cM" %in% colnames(mapdata)){
+    #   cMpositions <- mapdata[,"cM"]
+    # } else{
+    #   stop("Could not extract map positions using header 'position' or 'cM' from $map of IBD_list. Suggest to check and manually re-name!")
+    # }
+    
   }
   
   subcM <- 1:length(cMpositions) #for subsetting later..
@@ -4348,7 +4529,7 @@ visualiseHaplo <- function(IBD_list,
         if(length(phenoGeno) != length(select_offspring)) warning("Merely ",paste(length(phenoGeno),"of the",length(select_offspring),"offspring names could be matched!"))
       }
     )
-
+    
     plotorder <- 1:length(phenoGeno)
   }
   
@@ -4387,13 +4568,13 @@ visualiseHaplo <- function(IBD_list,
   for(i in plotorder){
     
     plot(NULL,xlim=range(cMpositions),
-         ylim=c(1,ploidy+ploidy2),
+         ylim=c(0.75,ploidy+ploidy2),
          xlab=ifelse(xlabl,"cM",""),ylab=ifelse(ylabl,"homologue",""),
          main=mainTitle[i],
          axes=FALSE)
     
     axis(1)
-    axis(2,las=1)
+    axis(2,las=1,at = 1:(ploidy + ploidy2))
     
     abline(h = ploidy + 0.5, lwd=2,col="gray50")
     
@@ -4434,7 +4615,7 @@ visualiseHaplo <- function(IBD_list,
     
     if(!is.null(recombination_data)){
       rec_dat <- recombination_data[[linkage_group]]$recombinations[[phenoGeno[i]]]
-     
+      
       if(list.depth(rec_dat) > 1){ #this might need tweaking
         for(v in 1:length(rec_dat)){ #handles multiple (probabilistic) valencies
           bp <- rec_dat[[v]]$recombination_breakpoints
@@ -4462,8 +4643,12 @@ visualiseHaplo <- function(IBD_list,
   # Fill in any remaining empty plot spaces:
   if(!is.null(multiplot) & !append){
     over <- 0
+    
     if(prod(multiplot) > popSize) over <- prod(multiplot) - popSize
-    if(prod(multiplot) < popSize) over <- prod(multiplot) - (popSize%%prod(multiplot))
+    if(prod(multiplot) < popSize) {
+      if(popSize %% prod(multiplot) != 0)
+        over <- prod(multiplot) - (popSize%%prod(multiplot))
+    }
     
     if(over > 0) for(i in 1:over) plot(NULL,xlim=c(0,1),ylim=c(0,1),
                                        xlab=NA,ylab=NA,axes=F)
@@ -4526,7 +4711,7 @@ visualiseHaplo <- function(IBD_list,
   }
   
   invisible(list(recombinants = recombinants,
-              allele_fish = alleles_fished))
+                 allele_fish = alleles_fished))
   
 } #visualiseHaplo
 
@@ -4580,6 +4765,11 @@ visualisePairing <- function(meiosis_report.ls,
     cs <- t(combn(rownames(countmat),2))
     edges <- as.data.frame(cbind(cs,countmat[lower.tri(countmat)]))
     colnames(edges) <- c("h1","h2","count")
+    
+    ## Update 09/23: Add the chm name to the homologue name for vertex labels
+    edges$h1 <- paste0(as.character(l),edges$h1)
+    edges$h2 <- paste0(as.character(l),edges$h2)
+    
     edges$count <- as.numeric(edges$count)
     ## express the counts as deviations from the mean:
     m.cnt <- mean(countmat[1,2:ploidy])
@@ -4623,7 +4813,7 @@ visualisePairing <- function(meiosis_report.ls,
   
   return(invisible(out.ls))
   
-  } #visualisePairing
+} #visualisePairing
 
 #' Visualise QTL homologue effects around a QTL position
 #' @description Function to visualise the effect of parental homologues around a QTL peak across the population.
@@ -4641,6 +4831,9 @@ visualisePairing <- function(meiosis_report.ls,
 #' @param point.density Parameter to increase the smoothing of homologue effect tracks
 #' @param zero.sum How allele substitution effect should be defined. If \code{FALSE} (by default), the effect of each homologue
 #' is computed relative to the overall phenotypic mean, otherwise contrasts (against offspring without the inherited homologue) are used.
+#' @param allelic_interaction By default \code{FALSE}, in which case the additive effects of parental alleles are visualised. If \code{TRUE}, a plot of
+#' the mean effect of combinations of parental alleles is visualised instead. \code{exploreQTL_output} is required in this case.
+#' @param exploreQTL_output If \code{allelic_interaction = TRUE}, the output of the function \code{\link{exploreQTL}} must be provided.
 #' @param return_plotData Logical, by default \code{FALSE}. If \code{TRUE}, plot data is returned, otherwise \code{NULL}.
 #' @return The estimated effects of the homologues, used in the visualisation
 #' @examples
@@ -4662,6 +4855,8 @@ visualiseQTLeffects <- function(IBD_list,
                                 col.pal = c("purple4","white","seagreen"),
                                 point.density = 50,
                                 zero.sum = FALSE,
+                                allelic_interaction = FALSE,
+                                exploreQTL_output = NULL,
                                 return_plotData = FALSE){
   
   oldpar <- par(no.readonly = TRUE)    
@@ -4674,34 +4869,94 @@ visualiseQTLeffects <- function(IBD_list,
   if(length(linkage_group)!=1 | !is.numeric(linkage_group))
     stop("linkage_group should be a single numeric identifier.")
   
-  ## Check the list depth:
-  listdepth <- list.depth(IBD_list) #polyqtlR:::list.depth(IBD_list)
-  if(listdepth != 3) stop("Unexpected input - IBD_list is expected to be a nested list representing 1 or more chromosomes! Please check input.")
+  IBD_list <- test_IBD_list(IBD_list)
   
   IBDarray <- IBD_list[[linkage_group]]$IBDarray
   IBDtype <- IBD_list[[linkage_group]]$IBDtype
   bivalent_decoding <- IBD_list[[linkage_group]]$biv_dec
   gap <- IBD_list[[linkage_group]]$gap
   
-  if(IBDtype == "genotypeIBD"){
+  ## Update v.0.1.0, add visualisation of allele interactions at QTL peak (different plot type)
+  if(allelic_interaction){
+    ## Initial checks
+    if(is.null(exploreQTL_output)) stop("Argument exploreQTL_output must also be provided")
+    if(IBDtype!= "genotypeIBD") stop("Cannot visualise allelic interactions using haplotype probabilities! Re-run estimate_IBD with HMM method.")
+    if(!"genotype.means" %in% names(exploreQTL_output)) stop("Incompatible exploreQTL_output detected. Make sure this is output from the function exploreQTL (>= v.0.1.0)")
     
-    if(IBD_list[[1]]$method == "hmm_TO"){
-      ## We are using the output of TetraOrigin
-      # Nstates <- Nstates.fun(biv_dec = bivalent_decoding, pl = ploidy, pl2 = ploidy2)
-      # mname <- paste0("GenotypeMat",Nstates)
-      # indicatorMatrix <- as.matrix(get(mname, envir = getNamespace("polyqtlR")))
-      # GenotypeCodes <- get(paste0("GenotypeCodes",Nstates))
-      
-      GenotypeCodes <- t(sapply(IBD_list[[1]]$genocodes,function(x) as.numeric(strsplit(as.character(x),"")[[1]])))
-      Nstates <- nrow(GenotypeCodes)
-      indicatorMatrix <- matrix(0,nrow=Nstates, ncol=ploidy + ploidy2)
-      for(r in 1:nrow(indicatorMatrix)){
-        for(h in 1:ncol(GenotypeCodes)){
-          indicatorMatrix[r,GenotypeCodes[r,h]] <- indicatorMatrix[r,GenotypeCodes[r,h]] + 1
-        }
+    means <- exploreQTL_output$genotype.means
+    # means <- means[!is.na(means),1] #convert to a named vector
+    
+    genos <- lapply(rownames(means), function(x) match(strsplit(x,"")[[1]],letters))
+    
+    ## Split this out into parent1 and parent2 genos:
+    pars <- lapply(genos, function(x) list(P1 = paste0(x[x %in% 1:ploidy],collapse = ""),
+                                           P2 = paste0(x[x %in% (ploidy+1):(ploidy + ploidy2)],collapse = "")))
+    
+    P1labels <- sort(unique(sapply(pars,'[[',"P1")))
+    P2labels <- sort(unique(sapply(pars,'[[',"P2")))
+    
+    ## The dimensions are defined by ploidy, ploidy2 and bivdec:
+    P1dim <- Nstates.onepar(biv_dec = bivalent_decoding,pl = ploidy)
+    P2dim <- Nstates.onepar(biv_dec = bivalent_decoding,pl = ploidy2)
+    
+    if(nrow(means) != P1dim*P2dim) stop(paste0("Expected nrow of exploreQTL_output$genotype.means was ",P1dim*P2dim,". Detected ",nrow(means)," rows!"))
+    
+    ## Plot effects rather than means of the phenotypes in each class
+    means <- means - mean(means, na.rm = TRUE) #i.e. centred at 0
+    
+    ## Generate colour matrix for allele effects:
+    colours <- colorRampPalette(col.pal)(100)
+    
+    colmin <- range(means,na.rm = TRUE)[1] #These need to be defined for later use by color.bar
+    colmax <- range(means,na.rm = TRUE)[2]
+    
+    colbreaks <- seq(colmin, colmax, (colmax - colmin)/100)
+    
+    cols <- apply(means, 1, function(coln) {
+      if(is.na(coln)){
+        return("white")
+      } else{
+        return(colours[findInterval(x = coln,vec = colbreaks)])
       }
+    })
+    
+    cols[is.na(cols)] <- colours[100] #the max is undefined.
+    
+    plot_title <- paste("Genotype class effects at",
+                        exploreQTL_output$cM,"cM on LG",exploreQTL_output$linkage_group)
+    
+    layout(matrix(1:2,ncol=2),
+           widths = c(1,0.11))
+    plot(NULL, xlim = c(0.75,P2dim+0.25),ylim = c(0.75,P1dim+0.25),
+         xlab = "P2 alleles",ylab = "P1 alleles",axes = FALSE,
+         main = plot_title)
+    axis(1,labels = P2labels,at = 1:P2dim)
+    axis(2,labels = P1labels,at = 1:P1dim)
+    box()
+    
+    for(i in 1:length(pars)){
+      xpos <- match(pars[[i]]$P2,P2labels)
+      ypos <- match(pars[[i]]$P1,P1labels)
       
-    } else{
+      rect(xleft = xpos - 0.25,
+           ybottom = ypos - 0.25,
+           xright = xpos + 0.25,
+           ytop = ypos + 0.25,
+           density = NA,
+           col = cols[i],lwd = 1)
+    }
+    
+    ## Now add the colour bar on the right:
+    par(mar=c(0,2,0,0))
+    colour.bar(col.data = colorRampPalette(col.pal)(10),
+               min=colmin,max=colmax,nticks=8,
+               ticks=round(seq(colmin, colmax, len=8),2),
+               cex.ticks=0.8)
+    
+    
+  } else{
+    
+    if(IBDtype == "genotypeIBD"){
       ## We are using the output of estimate_IBD
       GenotypeCodes <- t(sapply(sapply(IBD_list[[1]]$genocodes,function(x) strsplit(x,"")), function(y) sapply(y,function(z) which(letters == z))))
       Nstates <- nrow(GenotypeCodes)
@@ -4711,164 +4966,157 @@ visualiseQTLeffects <- function(IBD_list,
           indicatorMatrix[r,GenotypeCodes[r,h]] <- indicatorMatrix[r,GenotypeCodes[r,h]] + 1
         }
       }
+    } else if(IBDtype == "haplotypeIBD"){
+      Nstates <- ploidy + ploidy2 #this is not actually needed..
+      indicatorMatrix <- NULL
+    } else{
+      stop("Unable to determine IBD type, please check IBD_list elements have a valid $IBDtype tag.")
     }
     
-  } else if(IBDtype == "haplotypeIBD"){
-    Nstates <- ploidy + ploidy2 #this is not actually needed..
-    indicatorMatrix <- NULL
-  } else{
-    stop("Unable to determine IBD type, please check IBD_list elements have a valid $IBDtype tag.")
-  }
-  
-  if(dim(IBDarray)[2] %% Nstates != 0) stop("Incompatible input detected..")
-  
-  if(!is.null(gap)) {
-    cMpositions <- as.numeric(unlist(lapply(strsplit(dimnames(IBDarray)[[1]],"cM"),function(x) x[2])))
-  } else{
-    cMpositions <- IBD_list[[linkage_group]]$map$position
-  }
-  
-  subcM <- 1:length(cMpositions) #for subsetting later..
-  
-  if(is.null(cM_range)){
-    cM_range <- cMpositions
-    index_range <- dimnames(IBDarray)[[1]]
-  } else if(min(cM_range) < min(cMpositions) | max(cM_range) > max(cMpositions)) {
-    message("Incompatible cM_range detected. Proceeding with the following positions:")
-    print(cMpositions)
-    cM_range <- cMpositions
-    index_range <- dimnames(IBDarray)[[1]]
-  } else{ #cM_range is properly specified. Fish out identifiers..
-    cM_range <- cMpositions[cMpositions >= min(cM_range) & cMpositions <= max(cM_range)]
-    index_range <- dimnames(IBDarray)[[1]][cMpositions >= min(cM_range) & cMpositions <= max(cM_range)]
-  }
-  
-  ## First get the starting set - the ones that were phenotyped and genotyped:
-  if(any(is.na(Phenotype.df[,genotype.ID]))){
-    warning("Missing genotype.ID values detected. Removing and proceeding without...")
-    Phenotype.df <- Phenotype.df[!is.na(Phenotype.df[,genotype.ID]),]
-  }
-  
-  phenoGeno0 <- intersect(
-    dimnames(IBDarray)[[3]],
-    unique(Phenotype.df[,genotype.ID]))
-  
-  pheno <- Phenotype.df[Phenotype.df[,genotype.ID] %in% phenoGeno0 &
-                          !is.na(Phenotype.df[,trait.ID]),c(genotype.ID,trait.ID)]
-  pheno <- pheno[order(pheno[,1]),]
-  
-  phenoGeno <- as.character(unique(pheno[,1]))
-  popSize <- length(phenoGeno)
-  Phenotypes <- pheno[,2]
-  
-  if(popSize != nrow(pheno)) stop("Check input - unequal dimensions of phenotypes and genotype data.\nSuggest to use polyqtlR:::BLUE() to generate consensus phenotypes first.")
-  
-  prob_matched <- match(phenoGeno,dimnames(IBDarray)[[3]])
-  
-  calc.AlEffects <- function(cM.pos=index_range[1], tag){
+    if(dim(IBDarray)[2] %% Nstates != 0) stop("Incompatible input detected..")
     
-    if(tag == "genotypeIBD"){
-      haploProbs <- t(IBDarray[cM.pos,,prob_matched]) %*% indicatorMatrix
-    } else{ #tag == "haplotypeIBD"
-      haploProbs <- t(IBDarray[cM.pos,,prob_matched])
+    if(!is.null(gap)) {
+      cMpositions <- as.numeric(unlist(lapply(strsplit(dimnames(IBDarray)[[1]],"cM"),function(x) x[2])))
+    } else{
+      cMpositions <- IBD_list[[linkage_group]]$map$position
     }
     
-    mean_sd_weights <- function(wghts,min.wghts, zerosum = zero.sum){
+    subcM <- 1:length(cMpositions) #for subsetting later..
+    
+    if(is.null(cM_range)){
+      cM_range <- cMpositions
+      index_range <- dimnames(IBDarray)[[1]]
+    } else if(min(cM_range) < min(cMpositions) | max(cM_range) > max(cMpositions)) {
+      message("Incompatible cM_range detected. Proceeding with the following positions:")
+      print(cMpositions)
+      cM_range <- cMpositions
+      index_range <- dimnames(IBDarray)[[1]]
+    } else{ #cM_range is properly specified. Fish out identifiers..
+      cM_range <- cMpositions[cMpositions >= min(cM_range) & cMpositions <= max(cM_range)]
+      index_range <- dimnames(IBDarray)[[1]][cMpositions >= min(cM_range) & cMpositions <= max(cM_range)]
+    }
+    
+    ## First get the starting set - the ones that were phenotyped and genotyped:
+    if(any(is.na(Phenotype.df[,genotype.ID]))){
+      warning("Missing genotype.ID values detected. Removing and proceeding without...")
+      Phenotype.df <- Phenotype.df[!is.na(Phenotype.df[,genotype.ID]),]
+    }
+    
+    phenoGeno0 <- intersect(
+      dimnames(IBDarray)[[3]],
+      unique(Phenotype.df[,genotype.ID]))
+    
+    pheno <- Phenotype.df[Phenotype.df[,genotype.ID] %in% phenoGeno0 &
+                            !is.na(Phenotype.df[,trait.ID]),c(genotype.ID,trait.ID)]
+    pheno <- pheno[order(pheno[,1]),]
+    
+    phenoGeno <- as.character(unique(pheno[,1]))
+    popSize <- length(phenoGeno)
+    Phenotypes <- pheno[,2]
+    
+    if(popSize != nrow(pheno)) stop("Check input - unequal dimensions of phenotypes and genotype data.\nSuggest to use polyqtlR:::BLUE() to generate consensus phenotypes first.")
+    
+    prob_matched <- match(phenoGeno,dimnames(IBDarray)[[3]])
+    
+    calc.AlEffects <- function(cM.pos=index_range[1], tag){
       
-      plus.mean <- sum(wghts*Phenotypes)/sum(wghts)
-      minus.mean <- sum(min.wghts*Phenotypes)/sum(min.wghts)
-      if(zerosum){
-        return(plus.mean - minus.mean) #here, only interested in the difference between presence and absense
-      } else{
-        return(plus.mean - mean(Phenotypes)) #just return the mean of presence
+      if(tag == "genotypeIBD"){
+        haploProbs <- t(IBDarray[cM.pos,,prob_matched]) %*% indicatorMatrix
+      } else{ #tag == "haplotypeIBD"
+        haploProbs <- t(IBDarray[cM.pos,,prob_matched])
       }
-    } #mean_sd_weights
+      
+      mean_sd_weights <- function(wghts,min.wghts, zerosum = zero.sum){
+        
+        plus.mean <- sum(wghts*Phenotypes)/sum(wghts)
+        minus.mean <- sum(min.wghts*Phenotypes)/sum(min.wghts)
+        if(zerosum){
+          return(plus.mean - minus.mean) #here, only interested in the difference between presence and absense
+        } else{
+          return(plus.mean - mean(Phenotypes)) #just return the mean of presence
+        }
+      } #mean_sd_weights
+      
+      output <- setNames(
+        sapply(1:(ploidy + ploidy2), function(sub.config){
+          weights <- haploProbs[,sub.config]
+          min.weights <- 1-haploProbs[,sub.config]
+          mean_sd_weights(weights,min.weights)
+        }),
+        paste0("H",1:(ploidy + ploidy2))
+      )
+    } #calc.AlEffects
     
-    output <- setNames(
-      sapply(1:(ploidy + ploidy2), function(sub.config){
-        weights <- haploProbs[,sub.config]
-        min.weights <- 1-haploProbs[,sub.config]
-        mean_sd_weights(weights,min.weights)
-      }),
-      paste0("H",1:(ploidy + ploidy2))
-    )
-  } #calc.AlEffects
-  
-  AlEffects <- do.call(rbind,lapply(index_range,calc.AlEffects, IBDtype))
-  rownames(AlEffects) <- cM_range
-  ## Generate colour matrix for allele effects:
-  colours <- colorRampPalette(col.pal)(100)
-  
-  colmin <- range(AlEffects)[1] #These need to be defined for later use by color.bar
-  colmax <- range(AlEffects)[2]
-  
-  colbreaks <- seq(colmin, colmax, (colmax - colmin)/100)
-  
-  ## Now visualise:
-  layout(matrix(c(1:(ploidy+ploidy2+1),
-                  rep(ploidy+ploidy2+2,ploidy+ploidy2+1)),
-                ncol=2),
-         heights = c(1, rep(0.1,ploidy + ploidy2 - 1), 0.3),
-         widths = c(1,0.11)) #afterwards add a side panel for the colour bar...
-  par(mar=c(1,4,1,0.5)) #adjust this later
-  
-  plotData <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == linkage_group &
-                                 LOD_data$QTL.res$position %in% cM_range,]
-  with(plotData,
-       plot(position,LOD,type="l",lwd=2,
-            xlab="",ylab="LOD",axes=FALSE,cex.lab=1.2))
-  axis(2,las=1); box()
-  
-  ## Add a threhold if available:
-  if(!is.null(LOD_data$Perm.res$threshold))
-    abline(h = LOD_data$Perm.res$threshold, lwd = 2, lty = 3, col = "darkred")
-  
-  ## I want to spline the colours to get a nicer spread on the plot..
-  span.param <- ceiling(point.density*(par("usr")[2]-par("usr")[1]))
-  spreadX <- seq(cM_range[1],cM_range[length(cM_range)],
-                 (cM_range[length(cM_range)] - cM_range[1])/span.param)
-  
-  PlotAlEffects <- apply(AlEffects, 2, function(coln) predict(smooth.spline(y = coln,x = cM_range),spreadX)$y)
-  
-  ## Any over-fitting outside the range of AlEffects needs to be suppressed (only interpolation allowed!)
-  PlotAlEffects[PlotAlEffects>max(AlEffects)] <- max(AlEffects)
-  PlotAlEffects[PlotAlEffects<min(AlEffects)] <- min(AlEffects)
-  
-  cols <- apply(PlotAlEffects, 2, function(coln) colours[findInterval(x = coln,vec = colbreaks)])
-  cols[is.na(cols)] <- colours[100] #the max is undefined.
-  
-  par(mar=c(0,4,0,0.5))
-  for(h in (ploidy + ploidy2):2) {
+    AlEffects <- do.call(rbind,lapply(index_range,calc.AlEffects, IBDtype))
+    rownames(AlEffects) <- cM_range
+    ## Generate colour matrix for allele effects:
+    colours <- colorRampPalette(col.pal)(100)
+    
+    colmin <- range(AlEffects)[1] #These need to be defined for later use by color.bar
+    colmax <- range(AlEffects)[2]
+    
+    colbreaks <- seq(colmin, colmax, (colmax - colmin)/100)
+    
+    ## Now visualise:
+    layout(matrix(c(1:(ploidy+ploidy2+1),
+                    rep(ploidy+ploidy2+2,ploidy+ploidy2+1)),
+                  ncol=2),
+           heights = c(1, rep(0.1,ploidy + ploidy2 - 1), 0.3),
+           widths = c(1,0.11)) #afterwards add a side panel for the colour bar...
+    par(mar=c(1,4,1,0.5)) #adjust this later
+    
+    plotData <- LOD_data$QTL.res[LOD_data$QTL.res$chromosome == linkage_group &
+                                   LOD_data$QTL.res$position %in% cM_range,]
+    with(plotData,
+         plot(position,LOD,type="l",lwd=2,
+              xlab="",ylab="LOD",axes=FALSE,cex.lab=1.2))
+    axis(2,las=1); box()
+    
+    ## Add a threhold if available:
+    if(!is.null(LOD_data$Perm.res$threshold))
+      abline(h = LOD_data$Perm.res$threshold, lwd = 2, lty = 3, col = "darkred")
+    
+    ## I want to spline the colours to get a nicer spread on the plot..
+    span.param <- ceiling(point.density*(par("usr")[2]-par("usr")[1]))
+    spreadX <- seq(cM_range[1],cM_range[length(cM_range)],
+                   (cM_range[length(cM_range)] - cM_range[1])/span.param)
+    
+    PlotAlEffects <- apply(AlEffects, 2, function(coln) predict(smooth.spline(y = coln,x = cM_range),spreadX)$y)
+    
+    ## Any over-fitting outside the range of AlEffects needs to be suppressed (only interpolation allowed!)
+    PlotAlEffects[PlotAlEffects>max(AlEffects)] <- max(AlEffects)
+    PlotAlEffects[PlotAlEffects<min(AlEffects)] <- min(AlEffects)
+    
+    cols <- apply(PlotAlEffects, 2, function(coln) colours[findInterval(x = coln,vec = colbreaks)])
+    cols[is.na(cols)] <- colours[100] #the max is undefined.
+    
+    par(mar=c(0,4,0,0.5))
+    for(h in (ploidy + ploidy2):2) {
+      plot(spreadX,rep(0.5,nrow(PlotAlEffects)),
+           ylim=c(0,1),col=cols[,h],pch=15,xlab="",ylab="", axes=FALSE)
+      mtext(side=2,text = paste("H",h),line = 0,las=1)}
+    # Add a bottom axis:
+    par(mar=c(4,4,0,0.5))
     plot(spreadX,rep(0.5,nrow(PlotAlEffects)),
-         ylim=c(0,1),col=cols[,h],pch=15,xlab="",ylab="", axes=FALSE)
-    mtext(side=2,text = paste("H",h),line = 0,las=1)}
-  # Add a bottom axis:
-  par(mar=c(4,4,0,0.5))
-  plot(spreadX,rep(0.5,nrow(PlotAlEffects)),
-       ylim=c(0,1),col=cols[,1],pch=15,xlab="cM",ylab="", cex.lab=1.2,
-       axes=FALSE)
-  mtext(side=2,text = "H 1",line = 0,las=1)
-  axis(1)
-  ## Now add the colour bar on the right:
-  par(mar=c(0,2,0,0))
-  colour.bar(col.data = colorRampPalette(col.pal)(10),
-             min=colmin,max=colmax,nticks=8,
-             ticks=round(seq(colmin, colmax, len=8),2),
-             cex.ticks=0.8)
-  
-  
-  # ## Return to original par settings:
-  # par(mfrow = c(1,1), mar = mar.orig)
-  # layout(matrix(1,ncol=1,nrow=1))
-  
-  if(return_plotData){
-    return(AlEffects)
-  } else {
-    return(NULL)
+         ylim=c(0,1),col=cols[,1],pch=15,xlab="cM",ylab="", cex.lab=1.2,
+         axes=FALSE)
+    mtext(side=2,text = "H 1",line = 0,las=1)
+    axis(1)
+    ## Now add the colour bar on the right:
+    par(mar=c(0,2,0,0))
+    colour.bar(col.data = colorRampPalette(col.pal)(10),
+               min=colmin,max=colmax,nticks=8,
+               ticks=round(seq(colmin, colmax, len=8),2),
+               cex.ticks=0.8)
+    
+    if(return_plotData){
+      return(AlEffects)
+    } else {
+      return(NULL)
+    }
   }
 } #visualiseQTLeffects
 
 ## This needs to be manually added to the NAMESPACE after each call to devtools::document:
-# exportPattern("^[[:alpha:]]+")
 # importFrom(Rcpp, evalCpp)
 # useDynLib(polyqtlR, .registration = TRUE)

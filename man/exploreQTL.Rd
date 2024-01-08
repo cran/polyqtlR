@@ -39,7 +39,7 @@ Otherwise, the cM position to be explored.}
 \item{QTLconfig}{Nested list of homologue configurations and modes of action of QTL to be explored and compared, the output of \code{\link{segMaker}}.
 Note that a default List is available of all possible bi-allelic QTL if none is provided.
 Each list element is itself a list with components
-\itemize{
+\describe{
  \item{homs : }{ a vector of length at least 1, describing the proposed homologues the functional allele Q is on}
  \item{mode : }{ Vector of same length as \code{homs} with codes "a" for additive and "d" for dominant.}
 }}
@@ -55,11 +55,16 @@ using the most likely QTL configuration?}
 }
 \value{
 List with the following items:
-\itemize{
-\item{BIC : }{Vector of BIC values corresponding to elements of \code{QTLconfig} provided for testing}
-\item{Allele.effects : }{Summary of the means and standard errors of groups with (+)
+\describe{
+\item{linkage_group}{Linkage group of the QTL peak being explored}
+\item{cM}{CentiMorgan position of the locus being explored}
+\item{BIC}{Vector of BIC values corresponding to elements of \code{QTLconfig} provided for testing}
+\item{Allele.effects}{Summary of the means and standard errors of groups with (+)
 and without(-) the specified allele combinations for the most likely QTLconfig
 if \code{testAllele_Effects} = \code{TRUE} (\code{NULL} otherwise).}
+\item{genotype.means}{A one-column matrix of mean phenotype values of offspring classes, with rownames
+corresponding to the genotype class. If the probability of certain genotype classes is 0 (e.g. double reduction
+classes where no double reduction occurred), then the genotype mean for that class will be \code{NA}}
 }
 }
 \description{

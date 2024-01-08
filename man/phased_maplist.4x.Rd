@@ -3,7 +3,7 @@
 \docType{data}
 \name{phased_maplist.4x}
 \alias{phased_maplist.4x}
-\title{A list of phased maps (4x)}
+\title{Phased maplist for example tetraploid}
 \format{
 An object of class \code{list} of length 2.
 }
@@ -11,6 +11,6 @@ An object of class \code{list} of length 2.
 phased_maplist.4x
 }
 \description{
-A list of phased maps (4x)
+Phased maplist for example tetraploid
 }
 \keyword{datasets}

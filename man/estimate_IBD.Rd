@@ -32,7 +32,7 @@ while for the latter \code{probgeno_df} must be supplied. Note that probabilisti
 
 \item{genotypes}{Marker genotypes, either a 2d matrix of integer marker scores or a data.frame of dosage probabilities. 
 Details are as follows:
-\itemize{
+\describe{
 \item{discrete : }{
  If \code{input_type} is 'discrete', \code{genotypes} is a matrix of marker dosage scores with markers in rows and individuals in columns.
  Both (marker) rownames and (individual or sample) colnames are needed.
@@ -40,7 +40,7 @@ Details are as follows:
 \item{probabilistic : }{
 If \code{input_type} is 'probabilistic', \code{genotypes} is a data frame as read from the scores file produced by function \code{saveMarkerModels} of R package 
 \code{fitPoly}, or alternatively, a data frame containing at least the following columns:
-\itemize{
+\describe{
 \item{SampleName : }{
 Name of the sample (individual)
 }
@@ -103,22 +103,22 @@ a very large available RAM may be required (>= 32Gb) to process the data.}
 \value{
 A list of IBD probabilities, organised by linkage group (as given in the input \code{phased_maplist}). Each
 list item is itself a list containing the following:
-\itemize{
-\item{IBDtype: The type of IBD; for this function only "genotypeIBD" are calculated.}
-\item{IBDarray: A 3d array of IBD probabilities, with dimensions marker, genotype-class and F1 individual.}
-\item{map: A 3-column data-frame specifying chromosome, marker and position (in cM)}
-\item{parental_phase: Phasing of the markers in the parents, as given in the input \code{phased_maplist}}
-\item{marginal.likelihoods: A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise \code{NULL}}
-\item{valency: The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", \code{NULL}}
-\item{offspring: Offspring names}
-\item{biv_dec: Logical, whether bivalent decoding was used in the estimation of the F1 IBD probabilities.}
-\item{gap: The size of the gap (in cM) used when interpolating the IBD probabilities. See function \code{\link{spline_IBD}} for details.}
-\item{genocodes: Ordered list of genotype codes used to represent different genotype classes.}
-\item{pairing: log likelihoods of each of the different pairing scenarios considered (can be used e.g. for post-mapping check of preferential pairing)}
-\item{ploidy: ploidy of parent 1}
-\item{ploidy2: ploidy of parent 2}
-\item{method: The method used, either "hmm" (default) or "heur". See argument \code{method}}
-\item{error: The error prior used, if method "hmm" was used, otherwise \code{NULL}}
+\describe{
+\item{IBDtype}{The type of IBD; for this function only "genotypeIBD" are calculated.}
+\item{IBDarray}{A 3d array of IBD probabilities, with dimensions marker, genotype-class and F1 individual.}
+\item{map}{A 3-column data-frame specifying chromosome, marker and position (in cM)}
+\item{parental_phase}{Phasing of the markers in the parents, as given in the input \code{phased_maplist}}
+\item{marginal.likelihoods}{A list of marginal likelihoods of different valencies if method "hmm" was used, otherwise \code{NULL}}
+\item{valency}{The predicted valency that maximised the marginal likelihood, per offspring. For method "heur", \code{NULL}}
+\item{offspring}{Offspring names}
+\item{biv_dec}{Logical, whether bivalent decoding was used in the estimation of the F1 IBD probabilities.}
+\item{gap}{The size of the gap (in cM) used when interpolating the IBD probabilities. See function \code{\link{spline_IBD}} for details.}
+\item{genocodes}{Ordered list of genotype codes used to represent different genotype classes.}
+\item{pairing}{log likelihoods of each of the different pairing scenarios considered (can be used e.g. for post-mapping check of preferential pairing)}
+\item{ploidy}{ploidy of parent 1}
+\item{ploidy2}{ploidy of parent 2}
+\item{method}{The method used, either "hmm" (default) or "heur". See argument \code{method}}
+\item{error}{The error prior used, if method "hmm" was used, otherwise \code{NULL}}
 }
 }
 \description{

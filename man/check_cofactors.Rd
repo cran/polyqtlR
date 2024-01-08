@@ -9,10 +9,11 @@ check_cofactors(
   Phenotype.df,
   genotype.ID,
   trait.ID,
-  LOD_data,
+  LOD_data = NULL,
   min_res = 20,
-  ncores = 1,
-  verbose = TRUE
+  test_full_model = FALSE,
+  verbose = TRUE,
+  ...
 )
 }
 \arguments{
@@ -24,24 +25,28 @@ check_cofactors(
 
 \item{trait.ID}{The colname of \code{Phenotype.df} that contains the response variable to use in the model (must be a colname of \code{Phenotype.df})}
 
-\item{LOD_data}{Output of \code{\link{QTLscan}} function.}
+\item{LOD_data}{Output of \code{\link{QTLscan}} function. Since v.0.1.0 this argument is optional - function will re-run a \code{QTLscan} if not provided.}
 
 \item{min_res}{The minimum genetic distance (resolution) assumed possible to consider 2 linked QTL (on the same linkage group) as independent. By default a value of 20 cM is used.
 This is not to suggest that 20 cM is a realistic resolution in a practical mapping study, but it provides the function with a criterion to consider 2 significant QTL within this distance as one and the same. 
 For this purpose, 20 cM seems a reasonable value to use. In practice, closely linked QTL will generally "explain" all the variation at nearby positions, making it unlikely to
 be able to disentangle their effects. QTL positions will vary slightly when co-factors are introduced, but again this variation is presumed not to exceed 20 cM either side.}
 
-\item{ncores}{How many CPU cores should be used in the evaluation? By default 1 core is used.}
+\item{test_full_model}{By default \code{FALSE}, in which case the normal additive-effects model is used in \code{\link{QTLscan}}. If set to \code{TRUE},
+then both the additive and full models are run for each genome-wide scan.}
 
 \item{verbose}{Logical, by default \code{TRUE} - should progress messages be printed to the console?}
+
+\item{\dots}{Option to pass extra arguments to \code{QTLscan}, for example specifying \code{ncores} for parallel processing, or changing
+the default settings of the permutation test (by default the number of permutations to perform = 1000 and alpha = 0.05). For a full list of options see the documentation of \code{\link{QTLscan}}.}
 }
 \value{
 Data frame with the following columns:
-\itemize{
-\item{LG: }{ Linkage group identifier}
-\item{cM: }{ CentiMorgan position}
-\item{deltaLOD: }{ The difference between the LOD score at the peak and the significance threshold (always positive, otherwise the QTL would not be significant)}
-\item{CofactorID: }{ A identifier giving the co-factor model used in detecting the QTL (if no co-factors were included then \code{NA}). The co-factor model is described
+\describe{
+\item{LG}{Linkage group identifier}
+\item{cM}{CentiMorgan position}
+\item{deltaLOD}{The difference between the LOD score at the peak and the significance threshold (always positive, otherwise the QTL would not be significant)}
+\item{CofactorID}{An identifier giving the co-factor model used in detecting the QTL (if no co-factors were included then \code{NA}). The co-factor model is described
 by concatenating all co-factor positions with a '+', so for example 1_10+4_20 would mean a co-factor model with 2 positions included as co-factors, namely 10 cM on linkage
 group 1 and 20 cM on linkage group 4.}
 }

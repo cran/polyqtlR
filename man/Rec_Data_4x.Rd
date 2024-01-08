@@ -3,7 +3,7 @@
 \docType{data}
 \name{Rec_Data_4x}
 \alias{Rec_Data_4x}
-\title{A list of recombination count data (4x)}
+\title{Recombination data for example tetraploid}
 \format{
 An object of class \code{list} of length 2.
 }
@@ -11,6 +11,6 @@ An object of class \code{list} of length 2.
 Rec_Data_4x
 }
 \description{
-A list of recombination count data (4x)
+Recombination data for example tetraploid
 }
 \keyword{datasets}

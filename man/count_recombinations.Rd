@@ -4,17 +4,20 @@
 \alias{count_recombinations}
 \title{Predict recombination breakpoints using IBD probabilities}
 \usage{
-count_recombinations(IBD_list, plausible_pairing_prob = 0.4)
+count_recombinations(IBD_list, plausible_pairing_prob = 0.3)
 }
 \arguments{
 \item{IBD_list}{List of IBD_probabilities as estimated using one of the various methods available (e.g. \code{\link{estimate_IBD}}).}
 
 \item{plausible_pairing_prob}{The minimum probability of a pairing configuration needed to analyse an individual's IBD data.
-The default setting of 0.4 is rather low - but accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.
+The default setting of 0.3 accommodates scenarios where e.g. two competing plausible pairing scenarios are possible.
 In such situations, both pairing configurations (also termed "valencies") would be expected to have a probability close to 0.5. Both are then considered,
-and the output contains the probability of both situations. These can then be used to generate a probabilistic recombination landscape. If a more definite 
+and the output contains the probability of both situations. These can then be used to generate a probabilistic recombination landscape. In some cases,
+it may not be possible to discern the pairing in one of the parents due to a lack of recombination (ie. full parental haplotypes were transmitted). In such cases, 
+having a lower threshold here will allow more offspring to be analysed without affecting the quality of the predictions. If a more definite 
 set of predictions is required, simply increase \code{plausible_pairing_prob} to eliminate such uncertainty. These individuals will then be 
-returned with a \code{NA} value.}
+returned with a \code{NA} value.
+In any case, it is always helpful to visualise the output using the function \code{\link{visualiseHaplo}}.}
 }
 \value{
 A nested list corresponding to each linkage group. Within each LG, a list with 3 items is returned, specifying the \code{plausible_pairing_prob}, the \code{map} and 

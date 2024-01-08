@@ -3,7 +3,7 @@
 \docType{data}
 \name{SNP_dosages.4x}
 \alias{SNP_dosages.4x}
-\title{A matrix of SNP marker dosages (4x)}
+\title{SNP marker dosage data for example tetraploid}
 \format{
 An object of class \code{matrix} (inherits from \code{array}) with 186 rows and 52 columns.
 }
@@ -11,6 +11,6 @@ An object of class \code{matrix} (inherits from \code{array}) with 186 rows and 
 SNP_dosages.4x
 }
 \description{
-A matrix of SNP marker dosages (4x)
+SNP marker dosage data for example tetraploid
 }
 \keyword{datasets}

@@ -3,7 +3,7 @@
 \docType{data}
 \name{BLUEs.pheno}
 \alias{BLUEs.pheno}
-\title{A data-frame of best linear unbiased predicted (BLUE) phenotypes (4x)}
+\title{Best Linear Unbiased Estimates of phenotype}
 \format{
 An object of class \code{data.frame} with 50 rows and 2 columns.
 }
@@ -11,6 +11,6 @@ An object of class \code{data.frame} with 50 rows and 2 columns.
 BLUEs.pheno
 }
 \description{
-A data-frame of best linear unbiased predicted (BLUE) phenotypes (4x)
+Best Linear Unbiased Estimates of phenotype
 }
 \keyword{datasets}

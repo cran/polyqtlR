@@ -3,14 +3,14 @@
 \docType{data}
 \name{qtl_LODs.4x}
 \alias{qtl_LODs.4x}
-\title{A list of QTL results (4x)}
+\title{QTL output for example tetraploid}
 \format{
-An object of class \code{list} of length 4.
+An object of class \code{list} of length 6.
 }
 \usage{
 qtl_LODs.4x
 }
 \description{
-A list of QTL results (4x)
+QTL output for example tetraploid
 }
 \keyword{datasets}

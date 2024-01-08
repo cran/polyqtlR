@@ -11,7 +11,7 @@ estimate_GIC(IBD_list)
 }
 \value{
 A nested list; each list element (per linkage group) contains the following items:
-\itemize{
+\describe{
 \item{GIC : }{Matrix of GIC values estimated from the IBD probabilities}
 \item{map : }{Integrated linkage map positions of markers used in IBD calculation}
 \item{parental_phase : }{The parental marker phasing, coded in 1 and 0's}

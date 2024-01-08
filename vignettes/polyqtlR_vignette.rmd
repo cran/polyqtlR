@@ -1,13 +1,12 @@
 ---
 title: "Performing polyploid QTL analysis using polyqtlR"
 author: "Peter M. Bourke"
-date: "`r Sys.Date()`"
+date: "2023-12-10"
 vignette: >
   %\VignetteIndexEntry{How to use polyqtlR}
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 bibliography: bibliography.bib
-csl: biomed-central.csl
 output: 
   html_document:
     toc: true
@@ -23,9 +22,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Introduction
 It is nowadays increasingly feasible to conduct genetic analyses in polyploid populations thanks to developments in genotyping technologies as well as tools designed to deal with these genotypes. `polyqtlR` is one such tool that provides a number of functions to perform quantitative trait locus (QTL) mapping in F1 populations of outcrossing, heterozygous polyploid species. For more details on the methodology, please see the 2021 *Bioinformatics* publication of [Bourke *et al.*](https://doi.org/10.1093/bioinformatics/btab574).
 
-`polyqtlR` assumes that a number of prior steps have already been performed - in particular, that an integrated linkage map for the mapping population has been generated. The package has been developed to utilise the output of the mapping software `polymapR`, although any alternative mapping software that produces phased and integrated linkage maps could also be used. However, the input files may have to be altered in such cases. Currently, bi-allelic SNP markers are the expected raw genotypic data, which is also the data format used by `polymapR` in map construction. However, some functions can also accept probabilistic genotypic data, for example in the estimation of IBD probabilities. Full functionality of probabilistic genotypes in the package has yet to be implemented but is planned for future releases. The assignment of marker dosages in polyploid species can be achieved using a number of R packages such as `fitPoly` [@Voorrips2011]. More background on the steps of dosage-calling and polyploid linkage mapping can be found in a review of the topic by Bourke *et al.* (2018) [@Bourke2018a].
+`polyqtlR` assumes that a number of prior steps have already been performed - in particular, that an integrated linkage map for the mapping population has been generated. The package has been developed to utilise the output of the mapping software `polymapR`, although any alternative mapping software that produces phased and integrated linkage maps could also be used. However, the input files may have to be altered in such cases. Currently, bi-allelic SNP markers are the expected raw genotypic data, which is also the data format used by `polymapR` in map construction. However, some functions can also accept probabilistic genotypic data, for example in the estimation of IBD probabilities. Full functionality of probabilistic genotypes in the package has yet to be implemented but is planned for future releases. The assignment of marker dosages in polyploid species can be achieved using a number of R packages such as `fitPoly` [@Voorrips2011]. More background on the steps of dosage-calling and polyploid linkage mapping can be found in a review of the topic by [@Bourke2018a].
 
-The QTL analysis functions primarily rely on identity-by-descent (IBD) probabilities, which are the probabilities of inheritance of particular combinations of parental haplotypes. Single-marker QTL detection methods are also available. The package was originally developed with the IBD output of TetraOrigin [@Zheng2016] in mind. However, the TetraOrigin package is only applicable to tetraploid datasets, and has been implemented in the proprietary software *Mathematica*. Therefore, alternative options to estimate IBD probabilities within R for multiple ploidy levels are offered in `polyqtlR`.
+The QTL analysis functions primarily rely on identity-by-descent (IBD) probabilities, which are the probabilities of inheritance of particular combinations of parental haplotypes. Single-marker QTL detection methods are also available. The package was originally developed with the IBD output of TetraOrigin [@Zheng2016] in mind. However, the TetraOrigin package was implemented in the proprietary software *Mathematica*, which many users may not have access to without buying a licence. Since 2021 an updated method called PolyOrigin (extended for multi-parental populations) has been released in the OpenSource *julia* software [@Zheng2021]. Alternative options to estimate IBD probabilities for multiple ploidy levels (2x, 3x, 4x and 6x) are also provided directly `polyqtlR`.
 
 Genotyping errors are a regular feature of modern marker datasets. Although linkage mapping software such as `polymapR` has been shown to be relatively robust against genotyping errors [@Bourke2018b], if present in sufficiently large proportions (~10 % errors or more) issues may arise with map accuracy and QTL detection. Therefore, a number of functions have been included in `polyqtlR` to check map accuracy using the estimated IBD probabilities, and to re-impute marker genotypes if required. These imputed genotypes may then be used in an iterative process to re-estimate the linkage map and re-run a QTL analysis.
 
@@ -66,10 +65,10 @@ In the example that follows we are using a simulated tetraploid dataset with 2 c
 ## IBD probabilities 
 
 Currently two options to estimate IBD probabilities in an F1 population exist within `polyqtlR`. The first uses a heuristic approach originally developed for tetraploids but later applied to hexaploid populations [@Bourke2014; @vanGeest2017] and implemented here in the `polyqtlR::estimate_IBD` function. This can be very computationally efficient at higher ploidy levels (and has been generalised to *all* ploidy levels), but the algorithm ignores partially-informative marker information. In datasets with large numbers of haplotype-specific markers this is not such an issue, but in datasets with fewer such markers the accuracy of the resulting IBD probabilities is compromised. 
-The method behind TetraOrigin [@Zheng2016] for offspring IBD probability estimation given a known parental marker phasing has also been replicated in the `polyqtlR::estimate_IBD` function (this is the default method used). Note that unlike the original TetraOrigin software, parental marker phasing is not re-estimated. However, this is usually a direct output of the linkage mapping procedure (*e.g.* using `polymapR`). 
+The method behind TetraOrigin [@Zheng2016] for offspring IBD probability estimation given a known parental marker phasing has also been implemented in the `polyqtlR::estimate_IBD` function (this is the default method used). Note that unlike the original TetraOrigin software, parental marker phasing is not re-estimated. However, this is usually a direct output of the linkage mapping procedure (*e.g.* using `polymapR`). 
 
 ### Data structures
-As the IBD data are the most central objects in this package it is worth spending a moment describing them. In `polyqtlR`, IBD probabilities are organised in nested list form. The first level of structure are the linkage groups. In our example dataset, the list should have two elements corresponding to the two linkage groups, each of which is itself a list containing the following elements:
+As the IBD data are the most central objects in this package it is worth spending a moment describing them. In `polyqtlR`, IBD probabilities are organised in nested list form. The first level of structure are the linkage groups. In our example dataset, the list has two elements corresponding to the two linkage groups, each of which is itself a list containing the following elements:
 
 * **IBDtype** The type of IBD probability, either "genotypeIBD" or "haplotypeIBD" 
 
@@ -136,16 +135,18 @@ nc <- parallel::detectCores() - 1
 nc <- 2 #to pass CRAN checks
 ```
 
-#### *Optional*: Importing IBDs from TetraOrigin
-If so desired, the original TetraOrigin package can be used to estimate IBD probabilities (again using a Hidden Markov Model) rather than using the `estimate_IBD` function. The results should be identical for tetraploids, while `polyqtlR` also offers the flexibility of handling multiple ploidy levels (2x, 3x, 4x and 6x).
+#### *Optional*: Importing IBDs from TetraOrigin or PolyOrigin
+If so desired, the TetraOrigin package (Mathematica software) or the PolyOrigin package (julia software) can be used to estimate IBD probabilities rather than using the `estimate_IBD` function. The results should be quite similar for diploids or tetraploids. If mapping in triploid or hexaploid populations, `polyqtlR::estimate_IBD` should be used.
 
+##### TetraOrigin
 TetraOrigin produces by default a large .txt output file after running the function "inferTetraOrigin". However, it is convenient to produce a summary of this output using the "saveAsSummaryITO" function, which produces a .csv file summarising the results. Information on how to use TetraOrigin is provided with the package itself, downloadable from [GitHub](https://github.com/chaozhi/TetraOrigin). 
 
-The function `import_IBD` imports the .csv output of TetraOrigin::saveAsSummaryITO. It takes a number of arguments, such as `folder`, which is the folder containing the output of TetraOrigin. For example, if we wanted to import IBDs from the folder "TetraOrigin" for a species with 5 linkage groups, we would run the following:
+The function `import_IBD` imports the .csv output of TetraOrigin::saveAsSummaryITO. It takes a number of arguments, such as `folder`, which is the folder containing the output of TetraOrigin. For example, if we wanted to import IBDs from the subfolder "TetraOrigin" for a species with 5 linkage groups, we would run the following:
 
 ```{r, eval = FALSE}
-IBD_4x <- import_IBD(folder = "TetraOrigin",
-                     filename.vec = paste0("TetraOrigin_Output_bivs_LinkageGroup",1:5,"_Summary"),
+IBD_4x <- import_IBD(method = "TO", #TO for TetraOrigin
+                     folder = "TetraOrigin",
+                     filename = paste0("TetraOrigin_Output_bivs_LinkageGroup",1:5,"_Summary"),
                      bivalent_decoding = TRUE)
 ```
 
@@ -155,6 +156,19 @@ Importing map data under description inferTetraOrigin-Summary,Genetic map of bia
 Importing parental phasing under description inferTetraOrigin-Summary,MAP of parental haplotypes
 Importing IBD data under description inferTetraOrigin-Summary,Conditonal genotype probability
 ```
+
+
+##### PolyOrigin
+A more recent version of the TetraOrigin software has been released in *julia*, extended for multi-parental populations of either diploid or tetraploid species. Details of the method can be found in Zheng *et al.* (2021) [@Zheng2021]. The software, as well as vignettes detailing how to use it can also be found on [GitHub](https://github.com/chaozhi/PolyOrigin.jl). 
+
+Assuming the output files are in a folder called "PolyOrigin" with filestem "PolyOrigin_Output", a similar call to import the IBDs would be:
+```{r, eval = FALSE}
+IBD_4x <- import_IBD(method = "PO", #PO for PolyOrigin
+                     folder = "PolyOrigin",
+                     filename = "PolyOrigin_Output")
+```
+
+Note that `bivalent_decoding` or `error` do not need to be specified when `method = "PO"`, as these parameters are looked up from the PolyOrigin log file. Note also that previously the summary output of TetraOrigin was split up per linkage group. In PolyOrigin, the output from all linkage groups is kept together.
 
 
 ### "Heuristic" method for IBD estimation
@@ -297,6 +311,7 @@ qtl_LODs.4x <- QTLscan(IBD_list = IBD_4x,
 qtl_LODs.4x <- readRDS("qtl_LODs.4x.RDS")
 ```
 
+`QTLscan` by default uses an additive-effects model [@bourke2021]. Since package v.0.1.0 it is also possible to run a QTL scan using the full model as described in [@hackett2014], which uses the genotypic IBD probabilties rather than the haplotype IBD probabilities as regressors in the detection model. Although this risks over-fitting (as the model is over-parametrised, particularly if genotype probabilities were estimated allowing for double reduction which adds many extra genotype classes), it may be useful to also check and compare the results after significance thresholds have been calculated (see below). The full model can be accessed in the `QTLscan` function by setting argument `allelic_interaction = TRUE`. 
 
 The function gives a summary table of the trait over the different blocks, which can be useful for identifying possibly outlying observations. Because the function calls on the `lm` function from base R, missing values are not allowed in the trait scores. `QTLscan` performs some imputation if blocks are present, by estimating block effects and using them and the observed values to predict a missing phenotype. If this behaviour is not desired, then manually removing these datapoints beforehand is necessary. `QTLscan` can only work if the genotype identifiers (the offspring names) match completely between the trait data and the IBD data. If this is not the case, an error will result. The function reports the number of offspring with matching genotype and phenotype identifiers, so the user can record the population size that was used in the analysis.
 
@@ -311,24 +326,24 @@ The object returned by `QTLscan` is a list with a number of items, including:
 
 * **Map** The linkage map upon which the IBD probabilities were based.
 
-More details on the output can be found by running `?QTLscan`. There are a number of functions in the package for visualising the results. The simplest is to produce a plot per linkage group, which can be achieved using the `plotQTL` function. An example call would be as follows:
+More details on the output can be found by running `?QTLscan`. There are a number of functions in the package for visualising the results. One option is to plot per linkage group, which can be achieved using the `plotQTL` function and grid layout (`layout = 'g'`). An example call would be as follows:
 
-```{r}
+```{r, fig.align='center',fig.height=10}
 plotQTL(LOD_data = qtl_LODs.4x,
-        multiplot = c(1,2), #1 row, 2 columns
-        col = "darkgreen")
+        layout = "g",
+        colour = "darkgreen")
 ```
 
 As before, details of the options available for this function can be accessed using `?plotQTL`.
 
-An alternative is to plot the results of the whole-genome scan on a single track, for which we use the `plotLinearQTL` function as follows:
+An alternative is to plot the results of the whole-genome scan on a single track, which since package v.0.1.0 is the default plotting behaviour of the `plotQTL` function:
 
 ```{r}
-plotLinearQTL(LOD_data = qtl_LODs.4x,
-              col = "dodgerblue")
+plotQTL(LOD_data = qtl_LODs.4x,
+        colour = "dodgerblue")
 ```
 
-A variant of this function is the `plotLinearQTL_list` function, which is specifically designed to visualise the results of a number of analysis together. This can also be done using either of the two functions already mentioned, but in the case of the _list version, the superimposed plots are re-scaled so that threshold lines overlap. This is covered in more detail in the section on [co-factors](#overlaycofactorplot).
+`plotQTL` can also visualise the results of a number of analysis together. By default, the superimposed plots are re-scaled so that threshold lines overlap (argument `rescale = TRUE`). This is covered in more detail in the section on [co-factors](#overlaycofactorplot).
 
 ### Significance thresholds
 Although it already appears like we have an interesting peak on LG 1, we are not sure whether this region is truly associated with our trait or not. One method of establishing whether the association is significant is to run a permutation test. Currently the package has two options. The first uses the full structure of your data as provided. However, it is much faster to run a permutation test when your data has a simple structure, with no experimental blocks or no genetic co-factors. To deal with experimental blocks, you should estimate [BLUEs](#blue) first before running the permutation test. For genetic co-factors, you can first run an analysis with the co-factor(s) included, and then use the residuals as your phenotype. However, it is also possible (but not recommended) to simply run a permutation test without these steps, using the `QTLscan` function as follows:
@@ -350,8 +365,8 @@ qtl_LODs.4x <- readRDS("qtl_LODs.4x_perm.RDS")
 If we now plot the results, the threshold line is automatically included:
 
 ```{r}
-plotLinearQTL(LOD_data = qtl_LODs.4x,
-              col = "dodgerblue")
+plotQTL(LOD_data = qtl_LODs.4x,
+        colour = "dodgerblue")
 ```
 
 However, if you ran this step you will have noticed that it is quite slow. Therefore, it is recommended to first estimate a mean phenotypic value per individual over years before running the permutation test, which we do here using best linear unbiased estimates in the `nlme` package which fits a linear mixed model with genotype as fixed effect.
@@ -387,8 +402,8 @@ qtl_LODs.4x <- readRDS("qtl_LODs.4x_fastpermute.RDS")
 If we now plot the results, the threshold line is automatically included:
 
 ```{r}
-plotLinearQTL(LOD_data = qtl_LODs.4x,
-              col = "dodgerblue")
+plotQTL(LOD_data = qtl_LODs.4x,
+        colour = "dodgerblue")
 ```
 
 Note that the LOD scores have now increased, but the significance threshold has also increased. This has to do with how the LOD score is estimated, using a ratio of the RSS from your fitted model at a putative QTL position with that of the NULL model with no QTL. In the case of blocks, the NULL model already contains your blocking term, and so a portion of the phenotypic variance is already accounted for when calculating the LOD score. When using BLUEs as your phenotype, you first correct your phenotypes for block effects, but the NULL model now has no explanatory variables, which artificially inflates your LODs. However, a permutation test will account for these sorts of discrepancies, and the region of the genome that lies above the threshold should be the same. 
@@ -397,7 +412,7 @@ Note that the LOD scores have now increased, but the significance threshold has 
 In many situations we may wish to include already-identified QTL positions as fixed genetic effects in a QTL search. This can help to reduce the amount of unwanted background variance in the phenotypic data which can lead to greater power to detect QTL at other positions. Another possible reason could be to test whether multiple peaks on a single linkage group are independent. There are two options for including co-factors in the package. We could use the automated function `check_cofactors` which performs all steps automatically, or we can run a manual co-factor analysis using `QTLscan`  by specifying the `cofactor_df` argument. 
 
 #### Manual co-factor analysis
-We first describe the manual approach using `QTLscan` directly, as this clearly demonstrates how co-factors can be included, and offers the most flexibility. To this we supply a data-frame with two columns, the first one giving the linkage group identifier and the second column giving the cM position (note that column identifiers are not mandatory, the function looks for LG in column 1 and cM in column 2 by itself). 
+We first describe the manual approach using `QTLscan` directly, as this clearly demonstrates how co-factors can be included, and offers the most flexibility. To this we supply a data-frame with at least two columns: the first one giving the linkage group identifier and the second column giving the cM position (note that column identifiers are not mandatory, the function looks for LG in column 1 and cM in column 2 by itself). Since package v.0.1.0 it is possible to add a third column, to specify whether the co-factor should be added as an additive-effects-only QTL, or whether allelic interactions are also to be modelled whemn fitting the co-factor.
 
 Before we add the QTL peak as a co-factor, we need to know where it is. We search for the peak as follows:
 
@@ -454,8 +469,8 @@ qtl_LODs.4x_cofactor <- readRDS("qtl_LODs.4x_cof_fastpermute.RDS")
 
 
 ```{r}
-plotLinearQTL(LOD_data = qtl_LODs.4x_cofactor,
-              col = "red")
+plotQTL(LOD_data = qtl_LODs.4x_cofactor,
+        colour = "red")
 ```
 
 
@@ -506,16 +521,13 @@ PVE(IBD_list = IBD_4x,
 
 
 ### Comparing multiple analyses
-It is often convenient to plot the results of different analyses together. For example comparing the results of a single marker analysis with an IBD-based approach, or plotting an initial QTL scan versus the results when a set of genetic co-factors were also included. Both the `plotQTL` and `plotLinearQTL` functions have an argument `overlay`, which, if set to `TRUE`, overlays plots on the previous plotting window, allowing multiple layers to be built on top of each other.
-
-However, in cases where significance thresholds were determined in separate analyses, using the simple `overlay` command will soon lead to cluttered-looking plots with multiple significance thresholds on top of each other. One possibility is to disable the visualisation of significance thresholds when rendering each plot. However, it is often of interest to compare the results in terms of the presence (or absence) of significant QTL peaks. For this reason the function `plotLinearQTL_list` was added to the package. This function re-scales overlaid plots so that the significance thresholds for each set of results overlaps perfectly. As the name suggests, it takes as its input a *list* of separate QTL results, each of which is the output of a separate call to the function `QTLscan`. The function will not run if this list is of length 1 (so the results of a single analysis), or if any of the analyses were run without `perm_test = TRUE`. In these cases, use of the simpler functions mentioned is appropriate.
+It is often convenient to plot the results of different analyses together. For example comparing the results of a single marker analysis with an IBD-based approach, or plotting an initial QTL scan versus the results when a set of genetic co-factors were also included. In cases where significance thresholds were determined in separate analyses, this will soon lead to cluttered-looking plots with multiple significance thresholds on top of each other. One possibility is to disable the visualisation of significance thresholds when rendering each plot. However, it is often of interest to compare the results in terms of the presence (or absence) of significant QTL peaks. For this reason the default behaviour of `plotQTL` when multiple results are passed to `LOD_data` is to re-scale the overlaid plots so that the significance thresholds for each set of results overlaps perfectly. In this case, `LOD_data` should be a *list* of separate QTL results, each of which is the output of a separate call to the function `QTLscan` or `singleMarkerRegression`. Re-scaling can be disabled by setting `rescale = FALSE`.
 
 We can compare the results obtained earlier from the original and co-factor analyses as follows:
 
 ```{r}
-plotLinearQTL_list(LOD_data.ls = list(qtl_LODs.4x,
-                                      qtl_LODs.4x_cofactor),
-                   plot_type = "lines")
+plotQTL(LOD_data = list(qtl_LODs.4x,
+                        qtl_LODs.4x_cofactor))
 ```
 
 <a name="sect7"></a>
@@ -629,14 +641,14 @@ qtl_SMR.4x <- singleMarkerRegression(dosage_matrix = SNP_dosages.4x,
 qtl_SMR.4x <- readRDS("qtl_SMR.4x.RDS")
 ```
 
-The results can be plotted alongside the IBD-based results using any of the plotting functions introduced earlier, *e.g.*:
+The results can be plotted alongside the IBD-based results:
 
 ```{r}
-plotLinearQTL_list(LOD_data.ls =  list(qtl_LODs.4x,
-                                       qtl_SMR.4x),
-                   plot_type = c("lines","points"), #IBD results as lines, SMR results as points..
-                   pch = 19,
-                   colours = c("darkgreen","navyblue"))
+plotQTL(LOD_data =  list(qtl_LODs.4x,
+                         qtl_SMR.4x),
+        plot_type = c("lines","points"), #IBD results as lines, SMR results as points..
+        pch = 19,
+        colour = c("darkgreen","navyblue"))
 ```
 
 

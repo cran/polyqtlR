@@ -49,11 +49,12 @@ Use \code{parallel::detectCores()} to find out how many cores you have available
 }
 \value{
 A list containing the following components:
-\itemize{
-\item{QTL.res : }{ The -log(p) of the model fit per marker are returned as "LOD" scores, although "LOP" would have been a better description.
+\describe{
+\item{QTL.res}{ The -log(p) of the model fit per marker are returned as "LOD" scores, although "LOP" would have been a better description.
 If requested, R2 values are also returned in column "R2adj"}
-\item{Perm.res : }{ The results of the permutation test if performed, otherwise \code{NULL}}
-\item{Map : }{ The linkage map if provided, otherwise \code{NULL}}
+\item{Perm.res}{ The results of the permutation test if performed, otherwise \code{NULL}}
+\item{Map}{ The linkage map if provided, otherwise \code{NULL}}
+\item{LG_names}{Names of the linkage groups, if a map was provided, otherwise \code{NULL}}
 }
 }
 \description{
