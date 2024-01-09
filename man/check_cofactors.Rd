@@ -25,7 +25,9 @@ check_cofactors(
 
 \item{trait.ID}{The colname of \code{Phenotype.df} that contains the response variable to use in the model (must be a colname of \code{Phenotype.df})}
 
-\item{LOD_data}{Output of \code{\link{QTLscan}} function. Since v.0.1.0 this argument is optional - function will re-run a \code{QTLscan} if not provided.}
+\item{LOD_data}{Output of \code{\link{QTLscan}} function. Since v.0.1.0 this argument is optional - function will re-run a \code{QTLscan} if not provided. Indeed, it may be desirable
+to not specify \code{LOD_data} if argument \code{test_full_model} is \code{TRUE}, as this will first combine the best results using additive-effects or allelic interaction-effects models before
+searching for additional QTL.}
 
 \item{min_res}{The minimum genetic distance (resolution) assumed possible to consider 2 linked QTL (on the same linkage group) as independent. By default a value of 20 cM is used.
 This is not to suggest that 20 cM is a realistic resolution in a practical mapping study, but it provides the function with a criterion to consider 2 significant QTL within this distance as one and the same. 

@@ -53,7 +53,9 @@ BLUE <- function(data,
 #' @param Phenotype.df A data.frame containing phenotypic values
 #' @param genotype.ID The colname of \code{Phenotype.df} that contains the population identifiers (F1 names) (must be a colname of \code{Phenotype.df})
 #' @param trait.ID The colname of \code{Phenotype.df} that contains the response variable to use in the model (must be a colname of \code{Phenotype.df})
-#' @param LOD_data Output of \code{\link{QTLscan}} function. Since v.0.1.0 this argument is optional - function will re-run a \code{QTLscan} if not provided.
+#' @param LOD_data Output of \code{\link{QTLscan}} function. Since v.0.1.0 this argument is optional - function will re-run a \code{QTLscan} if not provided. Indeed, it may be desirable
+#' to not specify \code{LOD_data} if argument \code{test_full_model} is \code{TRUE}, as this will first combine the best results using additive-effects or allelic interaction-effects models before
+#' searching for additional QTL.
 #' @param min_res The minimum genetic distance (resolution) assumed possible to consider 2 linked QTL (on the same linkage group) as independent. By default a value of 20 cM is used.
 #' This is not to suggest that 20 cM is a realistic resolution in a practical mapping study, but it provides the function with a criterion to consider 2 significant QTL within this distance as one and the same. 
 #' For this purpose, 20 cM seems a reasonable value to use. In practice, closely linked QTL will generally "explain" all the variation at nearby positions, making it unlikely to
@@ -88,26 +90,73 @@ check_cofactors <- function(IBD_list,
                             ...){
   
   if(is.null(LOD_data)){ #The user has not provided output from a QTL scan
-    if(verbose) message(paste0("No LOD_data detected. Running an initial QTL scan (with argument allelic_interaction = ",test_full_model,")..."))
-    
-    LOD_data <- QTLscan(IBD_list = IBD_list,
-                        Phenotype.df = Phenotype.df,
-                        genotype.ID = genotype.ID,
-                        trait.ID = trait.ID,
-                        perm_test = TRUE,
-                        allelic_interaction = test_full_model,
-                        verbose = verbose,
-                        ...)
+
+    if(test_full_model){
+      
+      if(verbose) message(paste0("No LOD_data detected. Running an initial QTL scan (with argument allelic_interaction = TRUE and FALSE)..."))
+      
+      LOD_data1 <- QTLscan(IBD_list = IBD_list,
+                          Phenotype.df = Phenotype.df,
+                          genotype.ID = genotype.ID,
+                          trait.ID = trait.ID,
+                          perm_test = TRUE,
+                          allelic_interaction = FALSE,
+                          verbose = verbose,
+                          ...)
+      
+      LOD_data2 <- QTLscan(IBD_list = IBD_list,
+                           Phenotype.df = Phenotype.df,
+                           genotype.ID = genotype.ID,
+                           trait.ID = trait.ID,
+                           perm_test = TRUE,
+                           allelic_interaction = TRUE,
+                           verbose = verbose,
+                           ...)
+      
+      
+      ## Combine the best results of additive and non-additive scans
+      qtl.df1 <- findQTLpeaks(LOD_data1)
+      qtl.df2 <- findQTLpeaks(LOD_data2)
+      combinedQTL <- rbind(qtl.df1,qtl.df2)
+      
+      qtl.df <- do.call(rbind,lapply(sort(unique(combinedQTL$LG)), function(lg){
+        temp <- combinedQTL[combinedQTL$LG == lg,]
+        
+        out <- temp[which.max(temp$deltaLOD),]
+        
+        if(max(abs(out$cM - temp$cM)) >= min_res){
+          rest <- temp[-which.max(temp$deltaLOD),]
+          rest <- rest[abs(rest$cM - out$cM) >= min_res,]
+          if(nrow(rest) >= 1){
+            out <- rbind(out,rest[which.max(rest$deltaLOD),])
+          }
+        }
+        
+        return(out)
+      }))
+      
+    } else{
+      ## Only run the additive-effects scan
+      if(verbose) message(paste0("No LOD_data detected. Running an initial QTL scan (with argument allelic_interaction = ",test_full_model,")..."))
+      
+      LOD_data <- QTLscan(IBD_list = IBD_list,
+                          Phenotype.df = Phenotype.df,
+                          genotype.ID = genotype.ID,
+                          trait.ID = trait.ID,
+                          perm_test = TRUE,
+                          allelic_interaction = test_full_model,
+                          verbose = verbose,
+                          ...)
+      
+      qtl.df <- findQTLpeaks(LOD_data)
+    }
+
+  } else{
+    if(is.null(LOD_data$Perm.res)) stop("This function only fits significant QTL positions as co-factors. Please re-run QTLscan with perm_test = TRUE to check significance.")
+    qtl.df <- findQTLpeaks(LOD_data) #qtl.df <- polyqtlR:::findQTLpeaks(LOD_data) #debugging
   }
   
-  ## Initial checks
-  if(is.null(LOD_data$Perm.res)) stop("This function only fits significant QTL positions as co-factors. Please re-run QTLscan with perm_test = TRUE to check significance.")
-  
-  if(length(which(LOD_data$QTL.res$LOD > LOD_data$Perm.res$threshold)) == 0) stop("This function only fits significant QTL positions as co-factors. If you still want to add non-significant positions as co-factors, use function QTLscan instead.")
-  
-  qtl.df <- findQTLpeaks(LOD_data) #qtl.df <- polyqtlR:::findQTLpeaks(LOD_data) #debugging
-  
-  ## For safety (should have been caught in last check..)
+  ## Check that there are significant QTL to proceed:
   if(nrow(qtl.df) == 0) stop("This function only fits significant QTL positions as co-factors. If you still want to add non-significant positions as co-factors, use function QTLscan instead.")
   
   if(verbose) message(paste0("There ",ifelse(nrow(qtl.df) == 1,"was ","were "),nrow(qtl.df)," significant QTL detected in initial scan, proceeding with these..."))
@@ -117,7 +166,7 @@ check_cofactors <- function(IBD_list,
   
   if(verbose) message("Searching for extra QTL given detected co-factors....")
   
-  ## Define an internal function for fitting cofactor, used 4 times susequently:
+  ## Define an internal function for fitting cofactor, used 4 times subsequently:
   fit_cofactor <- function(ibds,
                            phenos,
                            genoID,
@@ -157,11 +206,11 @@ check_cofactors <- function(IBD_list,
                                   phenos = Phenotype.df,
                                   genoID = genotype.ID,
                                   traitID = trait.ID,
-                                  cofdf = qtl.df[sub_q,],
+                                  cofdf = qtl.df[sub_q,c("LG","cM","model")],
                                   ai = FALSE) #run first with allelic_interaction = FALSE
       
-      
-      if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),"a",sep="_"),collapse="+")
+      # if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),"a",sep="_"),collapse="+")
+      if(nrow(temp_qtl.df) > 0) temp_qtl.df$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),qtl.df$model[sub_q],sep="_"),collapse="+")
       
       ## Runs if user would like QTL model with allelic interactions to also be checked (v.0.1.0):
       if(test_full_model){
@@ -169,11 +218,12 @@ check_cofactors <- function(IBD_list,
                                      phenos = Phenotype.df,
                                      genoID = genotype.ID,
                                      traitID = trait.ID,
-                                     cofdf = qtl.df[sub_q,],
+                                     cofdf = qtl.df[sub_q,c("LG","cM","model")],
                                      ai = TRUE) #re-run with allelic_interaction = TRUE
         
         
-        if(nrow(temp_qtl.df2) > 0) temp_qtl.df2$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),"f",sep="_"),collapse="+")
+        # if(nrow(temp_qtl.df2) > 0) temp_qtl.df2$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),"f",sep="_"),collapse="+")
+        if(nrow(temp_qtl.df2) > 0) temp_qtl.df2$CofactorID <- paste(paste(qtl.df$LG[sub_q],round(qtl.df$cM[sub_q],2),qtl.df$model[sub_q],sep="_"),collapse="+")
         
         temp_qtl.df <- rbind(temp_qtl.df,temp_qtl.df2)
       }
